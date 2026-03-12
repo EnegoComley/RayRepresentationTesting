@@ -150,7 +150,7 @@ if __name__ == '__main__':
     tests = ["RayPairs1k30D", "RayPairs1k60D", "SRayPairs"]
     logger = WandbLogger(project="RotationPrediction")
     for test in tests:
-        print(f"Testing on {test}")
+        print("Test " + test)
 
         model = get_model(test + "_")
         dataset = get_dataset(test, batch_size=20, data_dir="~/masters/datasets/RePAIR/")

@@ -132,7 +132,7 @@ def get_model(test_addition = ""):
     L.seed_everything(42)
     return PairRotationPrediction(test_addition)
 
-def get_dataset(rays_folder_name, batch_size=12, data_dir="~/Documents/masters/datasets/RePAIR/"):
+def get_dataset(rays_folder_name, batch_size=12, data_dir="~/Documents/masters/datasets/"):
     return RepairDatasetLoader(batch_size=batch_size, dataset_type="RotatedRayPairsDataset", rays_folder_name=rays_folder_name, data_dir=data_dir)
 
 
@@ -153,7 +153,7 @@ if __name__ == '__main__':
         print("Test " + test)
 
         model = get_model(test + "_")
-        dataset = get_dataset(test, batch_size=20, data_dir="~/masters/datasets/RePAIR/")
+        dataset = get_dataset(test, batch_size=20, data_dir="~/masters/datasets/")
         model, trainer = train(model, dataset, accumulate_grad_batches=3)
         del model, dataset, trainer
         torch.cuda.empty_cache()

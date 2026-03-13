@@ -22,9 +22,9 @@ class PuzzleDatasetLoader(L.LightningDataModule):
 
 
 class RepairDatasetLoader(PuzzleDatasetLoader):
-    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/RePAIR/", rays_folder_name = "Rays5K", fracture_rays_folder_name = "FractureRays5K"):
+    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", rays_folder_name = "Rays5K", fracture_rays_folder_name = "FractureRays5K"):
         super().__init__(batch_size=batch_size, dataset_type=dataset_type)
-        self.original_datadir = os.path.expanduser(data_dir)
+        self.original_datadir = os.path.expanduser(data_dir + "RePAIR/")
 
 
         test_split_location = os.path.join(self.original_datadir, "test.txt")
@@ -49,7 +49,7 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
 
         self.puzzle_to_pieces = {}
 
-        self.rays_data_dir = os.path.expanduser(f"~/Documents/masters/datasets/{rays_folder_name}/")
+        self.rays_data_dir = os.path.expanduser(data_dir + rays_folder_name)
         ray_files = os.listdir(self.rays_data_dir)
 
         self.piece_to_rotated_pieces = {}
@@ -77,7 +77,7 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
         self.dataset_info_dict = {
             "puzzle_to_pieces": self.puzzle_to_pieces,
             "data_dir": self.rays_data_dir,
-            "fracture_rays_dir": os.path.expanduser(f"~/Documents/masters/datasets/{fracture_rays_folder_name}/"),
+            "fracture_rays_dir": os.path.expanduser(data_dir + fracture_rays_folder_name),
             "piece_to_rotated_pieces": self.piece_to_rotated_pieces,
             "pieces_to_puzzles": self.pieces_to_puzzles
                                   }

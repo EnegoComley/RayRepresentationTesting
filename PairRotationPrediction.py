@@ -8,6 +8,7 @@ import torch
 from lightning.pytorch.loggers import WandbLogger
 from scipy.spatial.transform import Rotation
 import gc
+import os
 
 class RotationPredictionNetwork(nn.Module):
     def __init__(self):
@@ -125,7 +126,7 @@ class PairRotationPrediction(L.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_angular_error"}
+        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": self.test_addition + "val_angular_error"}
 
 
 def get_model(test_addition = ""):
@@ -148,13 +149,14 @@ def train(model, dataset, accumulate_grad_batches = 5, wandb_logger=None):
 if __name__ == '__main__':
     torch.set_float32_matmul_precision('medium')
     tests = ["RayPairs1k30D", "RayPairs1k60D", "SRayPairs"]
+    os.environ["WANDB_PROJECT"] = "sentiment-analysis"
     logger = WandbLogger(project="RotationPrediction")
     for test in tests:
         print("Test " + test)
 
         model = get_model(test + "_")
         dataset = get_dataset(test, batch_size=20, data_dir="~/masters/datasets/")
-        model, trainer = train(model, dataset, accumulate_grad_batches=3)
+        model, trainer = train(model, dataset, accumulate_grad_batches=3, wandb_logger=logger)
         del model, dataset, trainer
         torch.cuda.empty_cache()
         gc.collect()

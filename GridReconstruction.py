@@ -92,7 +92,7 @@ class GridReconstruction(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[23, 32, 40, 45], gamma=0.5)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
         return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
 
 
@@ -104,5 +104,5 @@ if __name__ == "__main__":
                                          representation_folder_name="grids", num_workers=2)
     L.seed_everything(42)
     model = GridReconstruction()
-    trainer = L.Trainer(max_epochs=25, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=5)
+    trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=10)
     trainer.fit(model, datamodule=dataset_loader)

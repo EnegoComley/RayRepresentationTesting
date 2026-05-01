@@ -101,7 +101,7 @@ class GridReconstruction(L.LightningModule):
 if __name__ == "__main__":
     wandb_logger = WandbLogger(project='GridReconstruction')
     dataset_loader = RepairDatasetLoader(batch_size=2, dataset_type="FixedGridDataset",
-                                         representation_folder_name="grids", num_workers=2)
+                                         representation_folder_name="grids", num_workers=2, data_dir="~/Documents/masters/datasets/")
     L.seed_everything(42)
     model = GridReconstruction()
     trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=10)

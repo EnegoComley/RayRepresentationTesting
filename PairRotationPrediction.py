@@ -149,7 +149,6 @@ def train(model, dataset, accumulate_grad_batches = 5, wandb_logger=None):
 if __name__ == '__main__':
     torch.set_float32_matmul_precision('medium')
     tests = ["RayPairs1k30D", "RayPairs1k60D", "SRayPairs"]
-    os.environ["WANDB_PROJECT"] = "sentiment-analysis"
     logger = WandbLogger(project="RotationPrediction")
     for test in tests:
         print("Test " + test)

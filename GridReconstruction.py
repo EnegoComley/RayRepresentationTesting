@@ -23,7 +23,7 @@ class GridReconstructionNetwork(nn.Module):
             nn.Conv3d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm3d(64),
             nn.ReLU(),
-            nn.Conv3d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.Conv3d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm3d(64),
             nn.ReLU(),
             nn.MaxPool3d(2), # 200 -> 100

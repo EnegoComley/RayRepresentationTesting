@@ -104,5 +104,6 @@ if __name__ == "__main__":
                                          representation_folder_name="grids", num_workers=2, data_dir="~/masters/datasets/")
     L.seed_everything(42)
     model = GridReconstruction()
-    trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=10)
+    checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath='GridReconstructionCheckpoints/')
+    trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=10, callbacks=[checkpoint_callback])
     trainer.fit(model, datamodule=dataset_loader)

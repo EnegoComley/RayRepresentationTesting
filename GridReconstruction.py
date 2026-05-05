@@ -198,8 +198,8 @@ class GridReconstruction(L.LightningModule):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GridReconstruction training')
-    parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
-    parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
+    parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss', default=False)
+    parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture', default=False)
     args = parser.parse_args()
 
     wandb_logger = WandbLogger(project='GridReconstruction')

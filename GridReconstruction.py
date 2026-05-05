@@ -6,12 +6,7 @@ import lightning as L
 import torch
 from lightning.pytorch.loggers import WandbLogger
 import os
-
-import math
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+import argparse
 
 torch.set_float32_matmul_precision('medium')
 
@@ -192,6 +187,7 @@ class GridReconstruction(L.LightningModule):
         self.calculate_loss(batch, stage='val')
 
 
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
@@ -201,11 +197,19 @@ class GridReconstruction(L.LightningModule):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='GridReconstruction training')
+    parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
+    parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
+    args = parser.parse_args()
+
     wandb_logger = WandbLogger(project='GridReconstruction')
     dataset_loader = RepairDatasetLoader(batch_size=2, dataset_type="FixedGridDataset",
                                          representation_folder_name="grids", num_workers=2, data_dir="~/masters/datasets/")
     L.seed_everything(42)
-    model = GridReconstruction(weight_opacity=True)
-    checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath='GridReconstructionCheckpoints/weighted_loss/')
+    model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck)
+
+    ckpt_dir = f"GridReconstructionCheckpoints/weight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}"
+    os.makedirs(ckpt_dir, exist_ok=True)
+    checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
     trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=10, callbacks=[checkpoint_callback])
     trainer.fit(model, datamodule=dataset_loader)

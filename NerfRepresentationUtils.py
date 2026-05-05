@@ -3,6 +3,9 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
+from matplotlib import cm
+
+
 
 class ColourPredictionPredictionNetwork(nn.Module):
     def __init__(self, latent_size):
@@ -20,16 +23,17 @@ class ColourPredictionPredictionNetwork(nn.Module):
 
     def forward(self, representation, alpha, direction):
         x = self.get_latent_representation(representation, alpha)
-        x = torch.cat((x, direction), dim=1)
-        x = self.head(x)
-
-        return x
+        return self.get_colour_from_latent(x, direction)
 
     def get_latent_representation(self, representation, alpha):
         #x = torch.cat((representation, alpha), dim=1)
         return self.representation_encoder(representation)
 
-def plot_colored_voxels(coords, colours, axis_names=None, assume_normalized=True, figsize=(8, 8), edgecolor=None):
+    def get_colour_from_latent(self, latent_representation, direction):
+        x = torch.cat((latent_representation, direction), dim=1)
+        return self.head(x)
+
+def plot_colored_voxels(coords, colours, axis_names=None, assume_normalized=True, figsize=(8, 8), edgecolor=None, axis_flips = (1, -1, 1)):
     """
     coords: tuple/list of three 1D torch tensors or numpy arrays (x_coords, y_coords, z_coords), length N
     colours: (N,3) torch tensor or numpy array with RGB values in 0..1
@@ -37,10 +41,12 @@ def plot_colored_voxels(coords, colours, axis_names=None, assume_normalized=True
     """
 
     # BGR to RGB
-    colours = torch.flip(colours, dims=[1])
+    #colours = torch.flip(colours, dims=[1])
 
+    coords = [coords[i] * axis_flips[i] for i in range(len(coords))]
     x_t, y_t, z_t = (c.cpu().numpy() if isinstance(c, torch.Tensor) else np.asarray(c) for c in coords)
     cols = colours.cpu().numpy() if isinstance(colours, torch.Tensor) else np.asarray(colours)
+
 
     if not assume_normalized and cols.size and cols.max() > 1.0:
         cols = cols / 255.0
@@ -106,3 +112,81 @@ def plot_colored_voxels(coords, colours, axis_names=None, assume_normalized=True
 
     plt.tight_layout()
     return fig, ax
+
+
+def _crop_to_cube(arr, mask):
+    """Return cropped arr, cropped mask, and slices describing the cube region.
+    The cube is the smallest cube that contains the bounding box of True in mask,
+    expanded (centered) to equal side lengths and clamped to array bounds.
+    """
+    # find bounding box
+    coords = np.where(mask)
+    mins = [int(c.min()) for c in coords]
+    maxs = [int(c.max()) for c in coords]
+    lengths = [maxs[i] - mins[i] + 1 for i in range(3)]
+    # desired cube size (cannot exceed array smallest dimension)
+    cube_size = min(max(lengths), min(arr.shape))
+    print(cube_size)
+    # compute centered starts for each axis
+    starts = []
+    for i in range(3):
+        center = (mins[i] + maxs[i]) // 2
+        start = center - cube_size // 2
+        # clamp start to valid range
+        start = max(0, min(start, arr.shape[i] - cube_size))
+        starts.append(int(start))
+    slices = tuple(slice(starts[i], starts[i] + cube_size) for i in range(3))
+
+    return arr[slices], mask[slices], slices
+
+def plot_opacity_tensor(tensor, threshold=0.1, cmap='viridis', figsize=(8, 8), show=True):
+    """
+    Crop the 3D tensor to a cube containing all values >= threshold, then plot.
+    Returns (fig, ax, cube_slices) where cube_slices is a 3-tuple of slice objects.
+    """
+    if isinstance(tensor, torch.Tensor):
+        arr = tensor.detach().cpu().numpy()
+    else:
+        arr = np.asarray(tensor)
+
+    if arr.ndim != 3:
+        raise ValueError("Expected a 3D tensor/array")
+
+    mask = arr >= threshold
+    if not mask.any():
+        print("No voxels above threshold.")
+        return
+
+    # Crop to cube containing all masked voxels
+    arr_c, mask_c, cube_slices = _crop_to_cube(arr, mask)
+
+    # Use raw values (clipped to [0,1]) for colormap and alpha
+    clipped = np.clip(arr_c, 0.0, 1.0)
+    cmap_obj = cm.get_cmap(cmap)
+    rgba = cmap_obj(clipped)  # shape (X,Y,Z,4)
+
+    facecolors = np.zeros(mask_c.shape + (4,), dtype=float)
+    facecolors[mask_c] = rgba[mask_c]
+    facecolors[..., 3] = np.where(mask_c, clipped, 0.0)
+
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, projection='3d')
+    ax.voxels(mask_c, facecolors=facecolors, edgecolor='k')
+
+    sx, sy, sz = mask_c.shape
+    ax.set_xlim(0, sx)
+    ax.set_ylim(0, sy)
+    ax.set_zlim(0, sz)
+    ax.set_box_aspect((sx, sy, sz))
+
+    ax.set_xticks(np.arange(0, sx + 1))
+    ax.set_yticks(np.arange(0, sy + 1))
+    ax.set_zticks(np.arange(0, sz + 1))
+
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    if show:
+        plt.show()
+    return fig, ax, cube_slices

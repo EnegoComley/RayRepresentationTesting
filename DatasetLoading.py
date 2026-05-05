@@ -201,6 +201,22 @@ class FixedGridDataset(GridDataset):
 
         del idx_tensors, vals_tensor, representation_values
         return representation
+
+
+    def get_testing_items(self, idx):
+        piece_name = self.piece_names[idx]
+        idx_tensors, vals_tensor, colour_tensor, directions = self.load_grid_representation(piece_name, load_colours_and_dirs=True)
+        with torch.no_grad():
+            representation_values = self.latent2representation.get_latent_representation(vals_tensor[:, 1:],
+                                                                                         vals_tensor[:, :1])
+        representation_values = torch.cat([representation_values, vals_tensor[:, :1]], dim=1)
+
+        representation = torch.zeros([200, 200, 200, representation_values.shape[1]], dtype=torch.float32)
+        representation[idx_tensors[0], idx_tensors[1], idx_tensors[2]] = representation_values
+        representation = torch.permute(representation, (3, 0, 1, 2))
+
+        del representation_values
+        return representation, idx_tensors, vals_tensor, colour_tensor, directions
         
         
 

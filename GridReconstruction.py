@@ -89,14 +89,14 @@ class GridReconstructionNetwork(nn.Module):
                 nn.Conv3d(128, 128, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm3d(128),
                 nn.ReLU(),
-                nn.Conv3d(128, 128, kernel_size=3, stride=1, padding=2),
+                nn.Conv3d(128, 128, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm3d(128),
                 nn.ReLU(),
                 nn.MaxPool3d(2),  # 28 -> 14
                 nn.Conv3d(128, 128, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm3d(128),
                 nn.ReLU(),
-                nn.Conv3d(128, 128, kernel_size=3, stride=1, padding=2),
+                nn.Conv3d(128, 128, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm3d(128),
                 nn.ReLU(),
                 nn.MaxPool3d(2),  # 14 -> 7
@@ -198,8 +198,8 @@ class GridReconstruction(L.LightningModule):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GridReconstruction training')
-    parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss', default=False)
-    parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture', default=False)
+    parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
+    parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
     args = parser.parse_args()
 
     wandb_logger = WandbLogger(project='GridReconstruction')

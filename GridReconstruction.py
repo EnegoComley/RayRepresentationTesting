@@ -205,7 +205,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     wandb_logger = WandbLogger(project='GridReconstruction')
-    dataset_loader = RepairDatasetLoader(batch_size=2, dataset_type="FixedGridDataset",
+    dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",
                                          representation_folder_name="grids", num_workers=2, data_dir="~/masters/datasets/")
     L.seed_everything(42)
     model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels)
@@ -213,5 +213,5 @@ if __name__ == "__main__":
     ckpt_dir = f"GridReconstructionCheckpoints/weight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}"
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
-    trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=10, callbacks=[checkpoint_callback])
+    trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback])
     trainer.fit(model, datamodule=dataset_loader)

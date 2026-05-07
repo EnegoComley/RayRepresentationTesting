@@ -2,11 +2,24 @@ from DatasetLoading import RepairDatasetLoader
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 import torch.nn as nn
+
+import argparse
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='GridReconstruction training')
+    parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
+    parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
+    parser.add_argument('--double_channels', action='store_true', help='Double the number of channels')
+
+
+    args, unknown = parser.parse_args()
+    print(args)
+    print("Argumensts: Weight opacity:", args.weight_opacity, "Small bottleneck:", args.small_bottleneck, "Double channels:", args.double_channels)
+
 import lightning as L
 import torch
 from lightning.pytorch.loggers import WandbLogger
 import os
-import argparse
 
 torch.set_float32_matmul_precision('medium')
 
@@ -199,16 +212,6 @@ class GridReconstruction(L.LightningModule):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='GridReconstruction training')
-    parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
-    parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
-    parser.add_argument('--double_channels', action='store_true', help='Double the number of channels')
-
-
-    args, unknown = parser.parse_known_args()
-    print(args)
-    print("Argumensts: Weight opacity:", args.weight_opacity, "Small bottleneck:", args.small_bottleneck, "Double channels:", args.double_channels)
-
 
     wandb_logger = WandbLogger(project='GridReconstruction')
     dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",

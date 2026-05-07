@@ -12,7 +12,7 @@ if __name__ == "__main__":
     parser.add_argument('--double_channels', action='store_true', help='Double the number of channels')
 
 
-    args, unknown = parser.parse_args()
+    args = parser.parse_args()
     print(args)
     print("Argumensts: Weight opacity:", args.weight_opacity, "Small bottleneck:", args.small_bottleneck, "Double channels:", args.double_channels)
 

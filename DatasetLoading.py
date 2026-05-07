@@ -43,7 +43,7 @@ class PuzzleDatasetLoader(L.LightningDataModule):
         return self.get_dataloader(self.test_split_dict)
 
 class RepairDatasetLoader(PuzzleDatasetLoader):
-    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name = "Rays5K", fracture_representation_folder_name = "FractureRays5K", num_workers=14):
+    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name = "Rays5K", fracture_representation_folder_name = "FractureRays5K", num_workers=14, overfit=False):
         super().__init__(batch_size=batch_size, dataset_type=dataset_type, num_workers=num_workers)
         self.original_datadir = os.path.expanduser(data_dir + "RePAIR/")
 
@@ -89,6 +89,14 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
 
         self.pieces_to_puzzles = {piece: puzzle for puzzle, pieces in self.puzzle_to_pieces.items() for piece in pieces}
 
+        if overfit:
+            self.puzzle_test_split = self.puzzle_test_split[:10]
+            self.puzzle_train_split = self.puzzle_train_split[:10]
+            self.puzzle_val_split = self.puzzle_val_split[:10]
+
+            self.test_pieces = self.test_pieces[:10]
+            self.train_pieces = self.train_pieces[:10]
+            self.val_pieces = self.val_pieces[:10]
 
         self.test_split_dict = {"puzzles": self.puzzle_test_split, "pieces": self.test_pieces}
         self.train_split_dict = {"puzzles": self.puzzle_train_split, "pieces": self.train_pieces}

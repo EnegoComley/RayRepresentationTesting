@@ -10,6 +10,7 @@ if __name__ == "__main__":
     parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
     parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
     parser.add_argument('--double_channels', action='store_true', help='Double the number of channels')
+    parser.add_argument('--overfit', action='store_true', help='Double the number of channels')
 
 
     args = parser.parse_args()
@@ -214,11 +215,13 @@ if __name__ == "__main__":
 
     wandb_logger = WandbLogger(project='GridReconstruction')
     dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",
-                                         representation_folder_name="grids", num_workers=2, data_dir="~/masters/datasets/")
+                                         representation_folder_name="grids", num_workers=2, data_dir="~/masters/datasets/", overfit=args.overfit)
     L.seed_everything(42)
     model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels)
 
     ckpt_dir = f"GridReconstructionCheckpoints/weight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}"
+    if args.overfit:
+        ckpt_dir += "_overfit"
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
     trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback])

@@ -157,6 +157,7 @@ class GridReconstruction(L.LightningModule):
         self.lr = 5e-4
         self.weight_opacity = weight_opacity
         self.loss_func = nn.MSELoss()
+        self.save_hyperparameters()
 
     def calculate_loss(self, batch, stage):
         representation = batch
@@ -202,7 +203,11 @@ if __name__ == "__main__":
     parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
     parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
     parser.add_argument('--double_channels', action='store_true', help='Double the number of channels')
+
+
     args, unknown = parser.parse_known_args()
+    print("Argumensts: Weight opacity:", args.weight_opacity, "Small bottleneck:", args.small_bottleneck, "Double channels:", args.double_channels)
+
 
     wandb_logger = WandbLogger(project='GridReconstruction')
     dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",

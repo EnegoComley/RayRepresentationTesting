@@ -224,5 +224,6 @@ if __name__ == "__main__":
         ckpt_dir += "_overfit"
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
-    trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback])
+    epochs = 200 if args.overfit else 20
+    trainer = L.Trainer(max_epochs=epochs, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback])
     trainer.fit(model, datamodule=dataset_loader)

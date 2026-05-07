@@ -14,7 +14,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     print(args)
-    print("Argumensts: Weight opacity:", args.weight_opacity, "Small bottleneck:", args.small_bottleneck, "Double channels:", args.double_channels)
 
 import lightning as L
 import torch
@@ -219,8 +218,8 @@ if __name__ == "__main__":
     L.seed_everything(42)
     model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels)
 
-    ckpt_dir = f"GridReconstructionCheckpoints/weight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}"
+    ckpt_dir = f"GridReconstructionCheckpoints/weight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}"
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
-    #trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback])
-    #trainer.fit(model, datamodule=dataset_loader)
+    trainer = L.Trainer(max_epochs=20, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback])
+    trainer.fit(model, datamodule=dataset_loader)

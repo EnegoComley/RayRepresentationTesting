@@ -202,7 +202,7 @@ if __name__ == "__main__":
     parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
     parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
     parser.add_argument('--double_channels', action='store_true', help='Double the number of channels')
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
 
     wandb_logger = WandbLogger(project='GridReconstruction')
     dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",

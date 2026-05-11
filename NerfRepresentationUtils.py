@@ -21,12 +21,11 @@ class ColourPredictionPredictionNetwork(nn.Module):
 
 
 
-    def forward(self, representation, alpha, direction):
-        x = self.get_latent_representation(representation, alpha)
+    def forward(self, representation, direction):
+        x = self.get_latent_representation(representation)
         return self.get_colour_from_latent(x, direction)
 
-    def get_latent_representation(self, representation, alpha):
-        #x = torch.cat((representation, alpha), dim=1)
+    def get_latent_representation(self, representation):
         return self.representation_encoder(representation)
 
     def get_colour_from_latent(self, latent_representation, direction):

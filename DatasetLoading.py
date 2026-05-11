@@ -8,6 +8,7 @@ import lightning as L
 from typing import Iterable, List, Tuple, Union
 from NerfRepresentationUtils import ColourPredictionPredictionNetwork
 
+import itertools
 
 
 class PuzzleDatasetLoader(L.LightningDataModule):
@@ -154,24 +155,23 @@ class GridDataset(Dataset):
         """
         full_path = os.path.join(self.representation_data_dir, file_path)
         data = np.load(full_path)
-        if 'indices' not in data or 'values' not in data or 'colour' not in data:
-            raise ValueError("File must contain 'indices', 'values' and 'colour' arrays")
 
         idx_np = data['indices']
-        vals_np = data['values']
+        #vals_np = data['values']
+        alphas_np = data['alphas']
+        representation_np = data['representation']
 
 
         if idx_np.ndim != 2 or idx_np.shape[0] != 3:
             raise ValueError("Saved 'indices' must have shape (3, N)")
-        if vals_np.ndim != 2 or vals_np.shape[1] != 28 or vals_np.shape[0] != idx_np.shape[1]:
-            raise ValueError("Saved 'values' must have shape (N, 28) matching indices length")
 
 
         dev = torch.device(device)
 
         # Convert to torch tensors and move to device
         idx_tensors = [torch.from_numpy(idx_np[i]).to(device=dev, dtype=torch.int).flatten() for i in range(3)]
-        vals_tensor = torch.from_numpy(vals_np).to(device=dev, dtype=torch.float32)
+        representation_tensor = torch.from_numpy(representation_np).to(device=dev, dtype=torch.float32)
+        alphas_tensor = torch.from_numpy(alphas_np).to(device=dev, dtype=torch.float32)
 
         if load_colours_and_dirs:
             colour_np = data['colour']
@@ -183,8 +183,9 @@ class GridDataset(Dataset):
             colour_tensor = torch.from_numpy(colour_np).to(device=dev, dtype=torch.float32)
             directions = torch.from_numpy(directions_np).to(device=dev, dtype=torch.float32)
 
-            return idx_tensors, vals_tensor, colour_tensor, directions
-        return idx_tensors, vals_tensor
+            return idx_tensors, representation_tensor, alphas_tensor, colour_tensor, directions
+
+        return idx_tensors, representation_tensor, alphas_tensor
 
 class LatentGridTestingDataset(GridDataset):
     def __getitem__(self, idx):
@@ -196,37 +197,51 @@ class LatentGridTestingDataset(GridDataset):
         return directions[ids], vals_tensor[ids, 1:], colour_tensor[ids], vals_tensor[ids, 0]
 
 class FixedGridDataset(GridDataset):
-    def __getitem__(self, idx):
-        piece_name = self.piece_names[idx]
-        idx_tensors, vals_tensor = self.load_grid_representation(piece_name)
-        with torch.no_grad():
-            representation_values = self.latent2representation.get_latent_representation(vals_tensor[:, 1:], vals_tensor[:, :1])
-        representation_values = torch.cat([representation_values, vals_tensor[:, :1]], dim=1)
+    def create_grid_representation(self, idx_tensors, vals_tensor, alphas):
+        print(alphas.shape)
+        representation_values = torch.cat([vals_tensor, alphas], dim=1)
 
         representation = torch.zeros([200, 200, 200, representation_values.shape[1]], dtype=torch.float32)
         representation[idx_tensors[0], idx_tensors[1], idx_tensors[2]] = representation_values
         representation = torch.permute(representation, (3, 0, 1, 2))
 
-        del idx_tensors, vals_tensor, representation_values
+        return representation
+
+    def __getitem__(self, idx):
+        piece_name = self.piece_names[idx]
+        idx_tensors, vals_tensor, alphas = self.load_grid_representation(piece_name)
+
+        representation = self.create_grid_representation(idx_tensors, vals_tensor, alphas)
+
+        del idx_tensors, vals_tensor, alphas
         return representation
 
 
     def get_testing_items(self, idx):
         piece_name = self.piece_names[idx]
-        idx_tensors, vals_tensor, colour_tensor, directions = self.load_grid_representation(piece_name, load_colours_and_dirs=True)
-        with torch.no_grad():
-            representation_values = self.latent2representation.get_latent_representation(vals_tensor[:, 1:],
-                                                                                         vals_tensor[:, :1])
-        representation_values = torch.cat([representation_values, vals_tensor[:, :1]], dim=1)
+        idx_tensors, representation_tensor, alphas_tensor, colour_tensor, directions = self.load_grid_representation(piece_name, load_colours_and_dirs=True)
 
-        representation = torch.zeros([200, 200, 200, representation_values.shape[1]], dtype=torch.float32)
-        representation[idx_tensors[0], idx_tensors[1], idx_tensors[2]] = representation_values
-        representation = torch.permute(representation, (3, 0, 1, 2))
+        representation = self.create_grid_representation(idx_tensors, representation_tensor, alphas_tensor)
 
-        del representation_values
-        return representation, idx_tensors, vals_tensor, colour_tensor, directions
+        return representation, idx_tensors, colour_tensor, directions
         
-        
+
+
+class SimpleRotatedGridDataset(FixedGridDataset):
+    def __init__(self, split_dict, dataset_info_dict):
+        super().__init__(split_dict, dataset_info_dict)
+        axis_swaps = list(itertools.permutations([0, 1, 2]))
+        axis_flips = list(itertools.product([1, -1], repeat=2))
+        pairs = [list(p) for p in itertools.product(range(len(axis_swaps)), range(len(axis_flips)))]
+        self.rotations = [(np.array(axis_swaps[a]), np.array(axis_flips[b])) for a, b in pairs]
+
+    def __len__(self):
+        return len(self.piece_names) * len(self.rotations)
+
+    #def __getitem__(self, idx):
+
+
+
 
 
 

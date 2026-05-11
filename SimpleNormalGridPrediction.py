@@ -122,7 +122,7 @@ if __name__ == '__main__':
 
 
     L.seed_everything(42)
-    model = RepairPatternNormalPrediction(args.model_path)
+    model = RepairPatternNormalPrediction(args.model_path + ".ckpt")
     
     epochs = 200 if args.overfit else 20
     trainer = L.Trainer(max_epochs=epochs, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20)

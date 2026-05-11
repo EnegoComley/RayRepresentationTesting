@@ -6,6 +6,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 import lightning as L
 from typing import Iterable, List, Tuple, Union
+
 from NerfRepresentationUtils import ColourPredictionPredictionNetwork
 
 import itertools
@@ -44,7 +45,7 @@ class PuzzleDatasetLoader(L.LightningDataModule):
         return self.get_dataloader(self.test_split_dict)
 
 class RepairDatasetLoader(PuzzleDatasetLoader):
-    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name = "Rays5K", fracture_representation_folder_name = "FractureRays5K", num_workers=14, overfit=False):
+    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name = "Rays5K", fracture_representation_folder_name = "FractureRays5K", num_workers=14, overfit=False, **kwargs):
         super().__init__(batch_size=batch_size, dataset_type=dataset_type, num_workers=num_workers)
         self.original_datadir = os.path.expanduser(data_dir + "RePAIR/")
 
@@ -111,7 +112,8 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
             "puzzle_to_pieces": self.puzzle_to_pieces,
             "data_dir": self.representation_data_dir,
             "pieces_to_puzzles": self.pieces_to_puzzles,
-            "latent2representation": self.latent2representation
+            "latent2representation": self.latent2representation,
+            "kwargs": kwargs
                                   }
 
 class RayRepairDatasetDataloader(RepairDatasetLoader):
@@ -145,7 +147,10 @@ class GridDataset(Dataset):
     def __getitem__(self, idx):
         raise NotImplementedError()
 
-    def load_grid_representation(self, file_path: str, load_colours_and_dirs = False, device: Union[str, torch.device] = 'cpu'):
+    def rotate_grid(self, idx_tensors, representation, alphas, rotation):
+        return idx_tensors, representation, alphas
+
+    def load_grid_representation(self, file_path: str, rotation=None, load_colours_and_dirs = False, device: Union[str, torch.device] = 'cpu'):
         """
         Load the file at `file_path` and return (indices_list, values_tensor, colour_tensor).
 
@@ -173,6 +178,9 @@ class GridDataset(Dataset):
         representation_tensor = torch.from_numpy(representation_np).to(device=dev, dtype=torch.float32)
         alphas_tensor = torch.from_numpy(alphas_np).to(device=dev, dtype=torch.float32)
 
+        # Rotate indices if needed
+        idx_tensors, representation_tensor, alphas_tensor = self.rotate_grid(idx_tensors, representation_tensor, alphas_tensor, rotation)
+
         if load_colours_and_dirs:
             colour_np = data['colour']
             directions_np = data['directions']
@@ -198,7 +206,6 @@ class LatentGridTestingDataset(GridDataset):
 
 class FixedGridDataset(GridDataset):
     def create_grid_representation(self, idx_tensors, vals_tensor, alphas):
-        print(alphas.shape)
         representation_values = torch.cat([vals_tensor, alphas], dim=1)
 
         representation = torch.zeros([200, 200, 200, representation_values.shape[1]], dtype=torch.float32)
@@ -207,9 +214,9 @@ class FixedGridDataset(GridDataset):
 
         return representation
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, rotation=None):
         piece_name = self.piece_names[idx]
-        idx_tensors, vals_tensor, alphas = self.load_grid_representation(piece_name)
+        idx_tensors, vals_tensor, alphas = self.load_grid_representation(piece_name, rotation=rotation)
 
         representation = self.create_grid_representation(idx_tensors, vals_tensor, alphas)
 
@@ -217,9 +224,9 @@ class FixedGridDataset(GridDataset):
         return representation
 
 
-    def get_testing_items(self, idx):
+    def get_testing_items(self, idx, rotation=None):
         piece_name = self.piece_names[idx]
-        idx_tensors, representation_tensor, alphas_tensor, colour_tensor, directions = self.load_grid_representation(piece_name, load_colours_and_dirs=True)
+        idx_tensors, representation_tensor, alphas_tensor, colour_tensor, directions = self.load_grid_representation(piece_name, load_colours_and_dirs=True, rotation=rotation)
 
         representation = self.create_grid_representation(idx_tensors, representation_tensor, alphas_tensor)
 
@@ -227,18 +234,36 @@ class FixedGridDataset(GridDataset):
         
 
 
-class SimpleRotatedGridDataset(FixedGridDataset):
+class SimpleRotatedFixedGridDataset(FixedGridDataset):
     def __init__(self, split_dict, dataset_info_dict):
         super().__init__(split_dict, dataset_info_dict)
         axis_swaps = list(itertools.permutations([0, 1, 2]))
-        axis_flips = list(itertools.product([1, -1], repeat=2))
+        #axis_flips = [(1, 1, 1)] + list(set(itertools.permutations([1, 1, -1])))
+        axis_flips = list(itertools.product([ -1, 1], repeat=3))
         pairs = [list(p) for p in itertools.product(range(len(axis_swaps)), range(len(axis_flips)))]
         self.rotations = [(np.array(axis_swaps[a]), np.array(axis_flips[b])) for a, b in pairs]
 
     def __len__(self):
-        return len(self.piece_names) * len(self.rotations)
+        return len(self.piece_names)
 
-    #def __getitem__(self, idx):
+    def __getitem__(self, idx, rotation=None):
+        if rotation is None:
+            rotation = self.rotations[torch.randint(low=0, high=len(self.rotations), size=(1,)).item()]
+
+        representation = super().__getitem__(idx, rotation=rotation)
+        return representation, rotation
+
+    def rotate_grid(self, idx_tensors, representation, alphas, rotation):
+        axis_swaps, axis_flips = rotation
+
+        for i in range(3):
+            idx_tensors[i] = (idx_tensors[i] - 100) * axis_flips[i] + 100
+        idx_tensors = [idx_tensors[i] for i in axis_swaps]
+
+        return idx_tensors, representation, alphas
+
+    def get_testing_items(self, idx, rotation=((0,1,2), (1,1,1))):
+        return super().get_testing_items(idx, rotation=rotation)
 
 
 

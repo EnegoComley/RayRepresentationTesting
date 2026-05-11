@@ -169,8 +169,11 @@ class GridReconstruction(L.LightningModule):
         self.model = GridReconstructionNetwork(small_bottleneck, double_channels)
         self.lr = 5e-4
         self.weight_opacity = weight_opacity
+        self.small_bottleneck = small_bottleneck
+        self.double_channels = double_channels
         self.loss_func = nn.MSELoss()
         self.save_hyperparameters()
+
 
     def calculate_loss(self, batch, stage):
         representation = batch

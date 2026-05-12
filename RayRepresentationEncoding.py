@@ -47,7 +47,7 @@ class RayRepresentationEncoder(nn.Module):
         x = x.view(batch_size * n_rays, -1)
 
         x = self.ray_encoder(x)
-        x = x.view(batch_size, n_rays, -1)
+        x = torch.reshape(x, (batch_size, n_rays, -1))
         x = x + self.pos_encoding.unsqueeze(0).repeat(batch_size, 1, 1)
         x = self.transformer(x)
 

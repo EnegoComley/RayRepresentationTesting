@@ -257,7 +257,7 @@ class SimpleRotatedFixedGridDataset(FixedGridDataset):
         axis_swaps, axis_flips = rotation
 
         for i in range(3):
-            idx_tensors[i] = (idx_tensors[i] - 100) * axis_flips[i] + 100
+            idx_tensors[i] = 199 - idx_tensors[i] if axis_flips[i] == -1 else idx_tensors[i]
         idx_tensors = [idx_tensors[i] for i in axis_swaps]
 
         return idx_tensors, representation, alphas

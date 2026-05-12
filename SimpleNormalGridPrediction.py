@@ -56,11 +56,12 @@ class RepairPatternNormalPrediction(L.LightningModule):
 
     def get_normal_category(self, rotations):
         #This is a very badly written function
+        print(rotations)
         swaps, flips = zip(*rotations)
         category = torch.zeros(len(rotations), 6)
 
-        if type(swaps) != torch.Tensor:
-            swaps = torch.tensor(swaps)
+        #if type(swaps) != torch.Tensor:
+        #    swaps = torch.tensor(swaps)
 
         y_flips = [flip[1] for flip in flips]
         for i, x in enumerate(y_flips):

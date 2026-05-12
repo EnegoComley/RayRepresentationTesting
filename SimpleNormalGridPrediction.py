@@ -58,6 +58,8 @@ class RepairPatternNormalPrediction(L.LightningModule):
         #This is a very badly written function
         swaps, flips = zip(*rotations)
         category = torch.zeros(len(rotations), 6)
+        swaps = np.array(swaps)
+        print(swaps)
         swaps = torch.tensor(swaps)
 
         y_flips = [flip[1] for flip in flips]

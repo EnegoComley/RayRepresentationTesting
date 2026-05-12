@@ -214,7 +214,7 @@ class GridRepresentationEncoder(nn.Module):
     def forward(self, representation):
         batch_size, n_patches, latent_size = representation.shape
 
-        x = n_patches.view(batch_size * n_patches, -1)
+        x = representation.view(batch_size * n_patches, -1)
 
         x = self.patch_encoder(x)
         x = x.view(batch_size, n_patches, -1)

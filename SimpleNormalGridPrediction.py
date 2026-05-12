@@ -28,7 +28,6 @@ class NormalPredictionNetwork(nn.Module):
 
 
         self.head = nn.Sequential(nn.Linear(representation_size, 64),
-                                  nn.BatchNorm1d(64),
                                   nn.ReLU(),
                                   nn.Linear(64, 6))
 

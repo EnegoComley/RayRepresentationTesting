@@ -36,14 +36,14 @@ class NormalPredictionNetwork(nn.Module):
     def forward(self, representation):
         self.conv_encoder.eval()
         with torch.no_grad():
-            representation = self.conv_encoder(representation)
+            x = self.conv_encoder.encoder(representation)
 
-        b, c, w, h, d = representation.shape
-        representation = representation.view(b, c, -1).permute(0, 2, 1)
+        b, c, w, h, d = x.shape
+        x = x.view(b, c, -1).permute(0, 2, 1)
 
-        x = self.representation_encoder(representation)
+        x = self.representation_encoder(x)
 
-        x = torch.max(x, dim=1)
+        x = torch.amax(x, dim=1)
         x = self.head(x)
 
         return x

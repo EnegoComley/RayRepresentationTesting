@@ -71,7 +71,7 @@ class RepairPatternNormalPrediction(L.LightningModule):
                 category[i, -3:] = (swaps[i] == 1).float()
 
 
-        return torch.argmax(category, dim=1)
+        return torch.argmax(category, dim=1).to(self.device)
 
 
     def calculate_loss(self, batch, stage):

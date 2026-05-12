@@ -114,7 +114,7 @@ if __name__ == '__main__':
 
     wandb_logger = WandbLogger(project='SimpleNormalGridPrediction')
     datasets_path = data_dir = "~/masters/datasets/"
-    dataset_loader = RepairDatasetLoader(batch_size=2, dataset_type="SimpleRotatedGridDataset",
+    dataset_loader = RepairDatasetLoader(batch_size=2, dataset_type="SimpleRotatedFixedGridDataset",
                                          representation_folder_name="gridswithRepresentation",
                                          num_workers=2,
                                          data_dir=datasets_path)

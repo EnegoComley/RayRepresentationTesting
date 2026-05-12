@@ -189,3 +189,37 @@ def plot_opacity_tensor(tensor, threshold=0.1, cmap='viridis', figsize=(8, 8), s
     if show:
         plt.show()
     return fig, ax, cube_slices
+
+
+class GridRepresentationEncoder(nn.Module):
+    def __init__(self, transformer_layers=1, representation_size=128, initial_dropout=0.1, n_patches=7*7*7):
+        super().__init__()
+        self.patch_encoder = nn.Sequential(nn.Dropout(initial_dropout),
+                                      nn.Linear(representation_size, representation_size),
+                                      nn.BatchNorm1d(representation_size),
+                                      nn.ReLU(),
+                                      nn.Linear(representation_size, representation_size),
+                                      nn.BatchNorm1d(representation_size),
+                                      nn.ReLU())
+
+        #self.ray_encoder = ConvEncoder()
+
+
+
+        transformer_layer = nn.TransformerEncoderLayer(d_model=representation_size, nhead=8, dropout=0.3, batch_first=True)
+        self.transformer = nn.TransformerEncoder(transformer_layer, num_layers=transformer_layers)
+
+        self.pos_encoding = nn.Parameter(torch.randn(n_patches, representation_size), requires_grad=True)
+
+    def forward(self, representation):
+        batch_size, n_patches, latent_size = representation.shape
+
+        x = n_patches.view(batch_size * n_patches, -1)
+
+        x = self.patch_encoder(x)
+        x = x.view(batch_size, n_patches, -1)
+        x = x + self.pos_encoding.unsqueeze(0).repeat(batch_size, 1, 1)
+        x = self.transformer(x)
+
+        del batch_size, n_patches, latent_size
+        return x

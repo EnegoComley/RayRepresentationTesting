@@ -14,6 +14,7 @@ import lightning as L
 import torch
 from lightning.pytorch.loggers import WandbLogger
 from GridReconstruction import GridReconstruction
+from NerfRepresentationUtils import GridRepresentationEncoder
 
 
 class NormalPredictionNetwork(nn.Module):
@@ -23,7 +24,7 @@ class NormalPredictionNetwork(nn.Module):
         self.conv_encoder = lightning_model.model
         representation_size = 256 if lightning_model.double_channels else 128
 
-        self.representation_encoder = RayRepresentationEncoder(transformer_layers=1, representation_size=representation_size)
+        self.representation_encoder = GridRepresentationEncoder(transformer_layers=1, representation_size=representation_size)
 
 
         self.head = nn.Sequential(nn.Linear(representation_size, 64),

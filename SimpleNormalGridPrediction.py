@@ -75,7 +75,7 @@ class RepairPatternNormalPrediction(L.LightningModule):
         representations, rotations = batch
         predicted_normal = self.model(representations)
 
-        true_normals = self.get_normals(rotations)
+        true_normals = self.get_normal_category(rotations)
 
         loss = torch.nn.functional.cross_entropy(predicted_normal, true_normals)
 

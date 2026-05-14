@@ -11,6 +11,7 @@ if __name__ == "__main__":
     parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
     parser.add_argument('--double_channels', action='store_true', help='Double the number of channels')
     parser.add_argument('--overfit', action='store_true', help='Double the number of channels')
+    parser.add_argument('--res_net', action='store_true', help='Use a res net like structure')
 
 
     args = parser.parse_args()
@@ -167,7 +168,7 @@ class GridReconstruction(L.LightningModule):
     def __init__(self, weight_opacity=False, small_bottleneck=False, double_channels=False):
         super().__init__()
         self.model = GridReconstructionNetwork(small_bottleneck, double_channels)
-        self.lr = 5e-4
+        self.lr = 1e-3
         self.weight_opacity = weight_opacity
         self.small_bottleneck = small_bottleneck
         self.double_channels = double_channels

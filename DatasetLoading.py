@@ -242,16 +242,21 @@ class SimpleRotatedFixedGridDataset(FixedGridDataset):
         axis_flips = list(itertools.product([ -1, 1], repeat=3))
         pairs = [list(p) for p in itertools.product(range(len(axis_swaps)), range(len(axis_flips)))]
         self.rotations = [(np.array(axis_swaps[a]), np.array(axis_flips[b])) for a, b in pairs]
+        self.normal_categories = self.get_normal_category(self.rotations)
 
     def __len__(self):
         return len(self.piece_names)
 
     def __getitem__(self, idx, rotation=None):
         if rotation is None:
-            rotation = self.rotations[torch.randint(low=0, high=len(self.rotations), size=(1,)).item()]
+            rotation_num = torch.randint(low=0, high=len(self.rotations), size=(1,)).item()
+            rotation = self.rotations[rotation_num]
+            normal_cat = self.normal_categories[rotation_num]
+        else:
+            normal_cat = self.get_normal_category([rotation])[0]
 
         representation = super().__getitem__(idx, rotation=rotation)
-        return representation, rotation
+        return representation, rotation, normal_cat
 
     def rotate_grid(self, idx_tensors, representation, alphas, rotation):
         axis_swaps, axis_flips = rotation
@@ -265,7 +270,29 @@ class SimpleRotatedFixedGridDataset(FixedGridDataset):
     def get_testing_items(self, idx, rotation=((0,1,2), (1,1,1))):
         return super().get_testing_items(idx, rotation=rotation)
 
+    def get_normal_category(self, rotations):
+        # This is a very badly written function
+        try:
+            swaps, flips = zip(*rotations)
+        except ValueError as e:
+            swaps, flips = rotations
+            swaps = swaps.unsqueeze(0)
+            flips = flips.unsqueeze(0)
+        category = torch.zeros(len(rotations), 6)
 
+        swaps = torch.tensor(swaps)
+        flips = torch.tensor(flips)
+        # if type(swaps) != torch.Tensor:
+        #    swaps = torch.tensor(swaps)
+
+        y_flips = [flip[1] for flip in flips]
+        for i, x in enumerate(y_flips):
+            if x == 1:
+                category[i, :3] = (swaps[i] == 1).float()
+            else:
+                category[i, -3:] = (swaps[i] == 1).float()
+
+        return torch.argmax(category, dim=1)
 
 
 

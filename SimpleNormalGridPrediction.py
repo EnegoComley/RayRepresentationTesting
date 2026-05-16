@@ -3,6 +3,7 @@ import argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, help="Path to the trained GridReconstruction Model")
+    parser.add_argument("--low_acc", action='store_true', help="Use a lower floating point precision for testing")
     args = parser.parse_args()
 
 from DatasetLoading import RepairDatasetLoader
@@ -54,46 +55,21 @@ class RepairPatternNormalPrediction(L.LightningModule):
         self.model = NormalPredictionNetwork(conv_encoder_path)
         self.lr = 1e-3
 
-    def get_normal_category(self, rotations):
-        #This is a very badly written function
-        try:
-            swaps, flips = zip(*rotations)
-        except ValueError as e:
-            swaps, flips = rotations
-            swaps = swaps.unsqueeze(0)
-            flips = flips.unsqueeze(0)
-        category = torch.zeros(len(rotations), 6)
-
-        #if type(swaps) != torch.Tensor:
-        #    swaps = torch.tensor(swaps)
-
-        y_flips = [flip[1] for flip in flips]
-        for i, x in enumerate(y_flips):
-            if x == 1:
-                category[i, :3] = (swaps[i] == 1).float()
-            else:
-                category[i, -3:] = (swaps[i] == 1).float()
-
-
-        return torch.argmax(category, dim=1).to(self.device)
-
 
     def calculate_loss(self, batch, stage):
-        representations, rotations = batch
+        representations, rotations, true_normal_category = batch
         predicted_normal = self.model(representations)
 
-        true_normals = self.get_normal_category(rotations)
-
-        loss = torch.nn.functional.cross_entropy(predicted_normal, true_normals)
+        loss = torch.nn.functional.cross_entropy(predicted_normal, true_normal_category)
 
         self.log(stage + '_loss', loss)
 
         # Calculate accuracy
         predicted_labels = torch.argmax(predicted_normal, dim=1)
-        accuracy = (predicted_labels == true_normals).float().mean()
+        accuracy = (predicted_labels == true_normal_category).float().mean()
         self.log(stage + '_accuracy', accuracy)
 
-        del representations, rotations, predicted_normal, true_normals, predicted_labels, accuracy
+        del representations, rotations, predicted_normal, true_normal_category, predicted_labels, accuracy
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -118,10 +94,10 @@ class RepairPatternNormalPrediction(L.LightningModule):
 
 
 if __name__ == '__main__':
-    torch.set_float32_matmul_precision('medium')
+    #torch.set_float32_matmul_precision('medium')
 
     wandb_logger = WandbLogger(project='SimpleNormalGridPrediction')
-    datasets_path = data_dir = "~/masters/datasets/"
+    datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
     dataset_loader = RepairDatasetLoader(batch_size=2, dataset_type="SimpleRotatedFixedGridDataset",
                                          representation_folder_name="gridswithRepresentation",
                                          num_workers=2,
@@ -131,6 +107,7 @@ if __name__ == '__main__':
 
     L.seed_everything(42)
     model = RepairPatternNormalPrediction(args.model_path + ".ckpt")
-    
-    trainer = L.Trainer(max_epochs=30, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20)
+
+    precision = "16-true" if args.low_acc else "32-true"
+    trainer = L.Trainer(max_epochs=1, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, precision=precision, profiler="advanced")
     trainer.fit(model, datamodule=dataset_loader)

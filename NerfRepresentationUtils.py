@@ -192,7 +192,7 @@ def plot_opacity_tensor(tensor, threshold=0.1, cmap='viridis', figsize=(8, 8), s
 
 
 class GridRepresentationEncoder(nn.Module):
-    def __init__(self, transformer_layers=1, representation_size=128, initial_dropout=0.1, n_patches=7*7*7):
+    def __init__(self, transformer_layers=1, representation_size=128, initial_dropout=0.1, n_patches=14*14*14):
         super().__init__()
         self.patch_encoder = nn.Sequential(nn.Dropout(initial_dropout),
                                       nn.Linear(representation_size, representation_size),

@@ -2,6 +2,7 @@ from DatasetLoading import RepairDatasetLoader
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 import torch.nn as nn
+from torchmetrics.segmentation import DiceScore
 
 import argparse
 
@@ -45,6 +46,15 @@ class ResnetBlock3D(nn.Module):
         out = self.bn2(out)
         out = self.relu(out)
         return out
+
+class DebugBlock(nn.Module):
+    def __init__(self, debug_string):
+        super().__init__()
+        self.debug_string = debug_string
+
+    def forward(self, x):
+        print(self.debug_string, x.shape)
+        return x
 
 class GridReconstructionNetwork(nn.Module):
     def __init__(self, small_bottleneck=False, double_channels=False, res_net=False):
@@ -166,13 +176,16 @@ class GridReconstructionNetwork(nn.Module):
                 nn.ReLU(),
                 ResnetBlock3D(64 * scale),
                 nn.MaxPool3d(2),  # 208 -> 104
+                DebugBlock("104"),
                 ResnetBlock3D(64 * scale),
                 nn.MaxPool3d(2),  # 104 -> 52
                 ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 52 -> 26
+                DebugBlock("26"),
                 ResnetBlock3D(128 * scale),
                 ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 26 -> 13
+                DebugBlock("13"),
                 ResnetBlock3D(128 * scale),
                 ResnetBlock3D(128 * scale),
             )
@@ -205,15 +218,29 @@ class GridReconstructionNetwork(nn.Module):
 
 
 class GridReconstruction(L.LightningModule):
-    def __init__(self, weight_opacity=False, small_bottleneck=False, double_channels=False, learning_rate=5e-4):
+    def __init__(self, weight_opacity=False, small_bottleneck=False, double_channels=False, res_net=False, learning_rate=5e-4):
         super().__init__()
-        self.model = GridReconstructionNetwork(small_bottleneck, double_channels)
+        self.model = GridReconstructionNetwork(small_bottleneck, double_channels, res_net)
         self.lr = learning_rate
         self.weight_opacity = weight_opacity
         self.small_bottleneck = small_bottleneck
         self.double_channels = double_channels
+        self.res_net = res_net
         self.loss_func = nn.MSELoss()
         self.save_hyperparameters()
+
+
+    def categorise_representation(self, representation, thresholds =[0.3, 0.7]):
+        # Representation is shape (batch_size, 32, 200, 200, 200)
+        b, z, w, h, d = representation.shape
+        representation = representation.permute(0, 2, 3, 4, 1).contiguous().view(b, z * w * h * d, d)
+        representation = representation.view(b, z, -1)
+
+        num_categories = len(thresholds) + 1
+        thresholds_min = torch.tensor([0] + thresholds).repeat()
+        thresholds_max = torch.tensor(thresholds + [1])
+
+    #def dice_loss(self, representation, reconstruction, smooth=1e-6):
 
 
     def calculate_loss(self, batch, stage):
@@ -262,9 +289,9 @@ if __name__ == "__main__":
     dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=2, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
-    model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, learning_rate=args.lr)
+    model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr)
 
-    ckpt_dir = f"GridReconstructionCheckpoints/weight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}"
+    ckpt_dir = f"GridReconstructionCheckpoints/weight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}_res_net={args.res_net}"
     if args.overfit:
         ckpt_dir += "_overfit"
     os.makedirs(ckpt_dir, exist_ok=True)

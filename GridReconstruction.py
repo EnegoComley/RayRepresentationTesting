@@ -235,7 +235,7 @@ class GridReconstruction(L.LightningModule):
 
     def categorise_representation(self, representation, threshold=0.3):
         # Representation is shape (batch_size, 32, 200, 200, 200)
-        categories = (representation > threshold).long()
+        categories = (representation[:, -1:] > threshold).long()
         return categories
 
     def get_dice_loss(self, representation, reconstruction):

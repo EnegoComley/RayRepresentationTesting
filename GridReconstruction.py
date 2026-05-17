@@ -176,16 +176,13 @@ class GridReconstructionNetwork(nn.Module):
                 nn.ReLU(),
                 ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 208 -> 104
-                DebugBlock("104"),
                 ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 104 -> 52
                 ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 52 -> 26
-                DebugBlock("26"),
                 ResnetBlock3D(128 * scale),
                 ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 26 -> 13
-                DebugBlock("13"),
                 ResnetBlock3D(128 * scale),
                 ResnetBlock3D(128 * scale),
             )
@@ -203,7 +200,7 @@ class GridReconstructionNetwork(nn.Module):
                 nn.BatchNorm3d(128 * scale),
                 nn.ReLU(),
                 ResnetBlock3D(128 * scale),
-                nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=13),  # 112 -> 200
+                nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1 + 4),  # 112 -> 200
                 nn.BatchNorm3d(128 * scale),
                 nn.ReLU(),
                 ResnetBlock3D(128 * scale),

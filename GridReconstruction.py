@@ -284,17 +284,17 @@ if __name__ == "__main__":
 
     wandb_logger = WandbLogger(project='GridReconstruction')
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
-    dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",
+    dataset_loader = RepairDatasetLoader(batch_size=2, dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=2, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
     model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr)
 
-    ckpt_dir = f"GridReconstructionCheckpoints/weight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}_res_net={args.res_net}"
+    ckpt_dir = f"GridReconstructionCheckpoints/BFLOATweight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}_res_net={args.res_net}"
     if args.overfit:
         ckpt_dir += "_overfit"
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
     epochs = 200 if args.overfit else 20
-    precision = "16-true" if args.low_acc else "32-true"
+    precision = "16-true" if args.low_acc else "bf16-mixed"
     trainer = L.Trainer(max_epochs=epochs, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback], precision=precision)
     trainer.fit(model, datamodule=dataset_loader)

@@ -171,13 +171,13 @@ class GridReconstructionNetwork(nn.Module):
                     nn.Conv3d(64 * scale, 32, kernel_size=3, stride=1, padding=1))
         else:
             self.encoder = nn.Sequential(
-                nn.Conv3d(32, 64 * scale, kernel_size=3, stride=1, padding=1+4),  # 200 -> 208
-                nn.BatchNorm3d(64 * scale),
+                nn.Conv3d(32, 128 * scale, kernel_size=3, stride=1, padding=1+4),  # 200 -> 208
+                nn.BatchNorm3d(128 * scale),
                 nn.ReLU(),
-                ResnetBlock3D(64 * scale),
+                ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 208 -> 104
                 DebugBlock("104"),
-                ResnetBlock3D(64 * scale),
+                ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 104 -> 52
                 ResnetBlock3D(128 * scale),
                 nn.MaxPool3d(2),  # 52 -> 26
@@ -203,11 +203,11 @@ class GridReconstructionNetwork(nn.Module):
                 nn.BatchNorm3d(128 * scale),
                 nn.ReLU(),
                 ResnetBlock3D(128 * scale),
-                nn.ConvTranspose3d(128 * scale, 64 * scale, kernel_size=4, stride=2, padding=13),  # 112 -> 200
-                nn.BatchNorm3d(64 * scale),
+                nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=13),  # 112 -> 200
+                nn.BatchNorm3d(128 * scale),
                 nn.ReLU(),
-                ResnetBlock3D(64 * scale),
-                nn.Conv3d(64 * scale, 32, kernel_size=3, stride=1, padding=1))
+                ResnetBlock3D(128 * scale),
+                nn.Conv3d(128 * scale, 32, kernel_size=3, stride=1, padding=1))
 
 
 

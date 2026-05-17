@@ -35,6 +35,7 @@ class ResnetBlock3D(nn.Module):
         self.conv1 = nn.Conv3d(channels, channels, kernel_size=3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm3d(channels)
         self.relu = nn.ReLU()
+        self.relu2 = nn.ReLU()
         self.bn2 = nn.BatchNorm3d(channels)
 
     def forward(self, x):
@@ -44,7 +45,7 @@ class ResnetBlock3D(nn.Module):
         out = self.relu(out)
         out += residual
         out = self.bn2(out)
-        out = self.relu(out)
+        out = self.relu2(out)
         return out
 
 class DebugBlock(nn.Module):

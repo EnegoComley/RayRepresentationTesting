@@ -1,3 +1,5 @@
+from sympy import false
+
 from DatasetLoading import RepairDatasetLoader
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
@@ -15,6 +17,7 @@ if __name__ == "__main__":
     parser.add_argument('--res_net', action='store_true', help='Use a res net like structure')
     parser.add_argument('--lr', type=float, default=5e-4, help='Initial learning rate')
     parser.add_argument("--low_acc", action='store_true', help="Use a lower floating point precision for testing")
+    parser.add_argument("--dice_loss", action='store_true', help="Use dice loss")
 
 
 
@@ -216,7 +219,7 @@ class GridReconstructionNetwork(nn.Module):
 
 
 class GridReconstruction(L.LightningModule):
-    def __init__(self, weight_opacity=False, small_bottleneck=False, double_channels=False, res_net=False, learning_rate=5e-4):
+    def __init__(self, weight_opacity=False, small_bottleneck=False, double_channels=False, res_net=False, dice_loss=false, learning_rate=5e-4):
         super().__init__()
         self.model = GridReconstructionNetwork(small_bottleneck, double_channels, res_net)
         self.lr = learning_rate
@@ -226,20 +229,18 @@ class GridReconstruction(L.LightningModule):
         self.res_net = res_net
         self.loss_func = nn.MSELoss()
         self.save_hyperparameters()
+        self.dice_loss_score = DiceScore(num_classes=2, include_background=False, input_format='index')
+        self.use_dice_loss = dice_loss
 
 
-    def categorise_representation(self, representation, thresholds =[0.3, 0.7]):
+    def categorise_representation(self, representation, threshold=0.3):
         # Representation is shape (batch_size, 32, 200, 200, 200)
-        b, z, w, h, d = representation.shape
-        representation = representation.permute(0, 2, 3, 4, 1).contiguous().view(b, z * w * h * d, d)
-        representation = representation.view(b, z, -1)
+        categories = (representation > threshold).long()
+        return categories
 
-        num_categories = len(thresholds) + 1
-        thresholds_min = torch.tensor([0] + thresholds).repeat()
-        thresholds_max = torch.tensor(thresholds + [1])
-
-    #def dice_loss(self, representation, reconstruction, smooth=1e-6):
-
+    def get_dice_loss(self, representation, reconstruction):
+        dice_loss = self.dice_loss_score(self.categorise_representation(representation), self.categorise_representation(reconstruction))
+        return dice_loss
 
     def calculate_loss(self, batch, stage):
         representation = batch
@@ -255,9 +256,19 @@ class GridReconstruction(L.LightningModule):
         colour_loss = self.loss_func(representation[:, :-1], reconstruction[:, :-1])
         self.log(stage + '_colour_loss', colour_loss)
 
-        del representation, reconstruction
+
+
         if self.weight_opacity:
             loss = opacity_loss + colour_loss
+
+        del opacity_loss, colour_loss
+        dice_loss = self.get_dice_loss(representation, reconstruction)
+        del representation, reconstruction
+
+        self.log(stage + '_dice_loss', dice_loss)
+
+        if self.use_dice_loss:
+            loss = loss + dice_loss
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -287,11 +298,13 @@ if __name__ == "__main__":
     dataset_loader = RepairDatasetLoader(batch_size=2, dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=2, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
-    model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr)
+    model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr, dice_loss=args.dice_loss)
 
     ckpt_dir = f"GridReconstructionCheckpoints/BFLOATweight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}_res_net={args.res_net}"
     if args.overfit:
         ckpt_dir += "_overfit"
+    if args.dice_loss:
+        ckpt_dir += "_dice_loss"
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
     epochs = 200 if args.overfit else 20

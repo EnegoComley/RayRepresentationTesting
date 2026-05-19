@@ -219,7 +219,7 @@ class GridReconstructionNetwork(nn.Module):
 
 
 class GridReconstruction(L.LightningModule):
-    def __init__(self, weight_opacity=False, small_bottleneck=False, double_channels=False, res_net=False, dice_loss=false, learning_rate=5e-4):
+    def __init__(self, ckpt_dir, weight_opacity=False, small_bottleneck=False, double_channels=False, res_net=False, dice_loss=false, learning_rate=5e-4):
         super().__init__()
         self.model = GridReconstructionNetwork(small_bottleneck, double_channels, res_net)
         self.lr = learning_rate
@@ -231,6 +231,7 @@ class GridReconstruction(L.LightningModule):
         self.save_hyperparameters()
         self.dice_loss_score = DiceScore(num_classes=2, include_background=False, input_format='index')
         self.use_dice_loss = dice_loss
+        self.ckpt_dir = ckpt_dir
 
 
     def categorise_representation(self, representation, threshold=0.3):
@@ -280,6 +281,8 @@ class GridReconstruction(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         self.calculate_loss(batch, stage='val')
+        if self.current_epoch % 20 == 0:
+            self.trainer.save_checkpoint(os.path.join(self.ckpt_dir, f"epoch_{self.current_epoch}.ckpt"))
 
 
 
@@ -298,9 +301,10 @@ if __name__ == "__main__":
     dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=2, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
-    model = GridReconstruction(weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr, dice_loss=args.dice_loss)
-
     ckpt_dir = f"GridReconstructionCheckpoints/BFLOATweight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}_res_net={args.res_net}"
+
+    model = GridReconstruction(ckpt_dir=ckpt_dir, weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr, dice_loss=args.dice_loss)
+
     if args.overfit:
         ckpt_dir += "_overfit"
     if args.dice_loss:

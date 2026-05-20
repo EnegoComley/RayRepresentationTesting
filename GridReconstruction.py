@@ -281,7 +281,7 @@ class GridReconstruction(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         self.calculate_loss(batch, stage='val')
-        if self.current_epoch % 20 == 0:
+        if self.current_epoch % 2 == 0:
             self.trainer.save_checkpoint(os.path.join(self.ckpt_dir, f"epoch_{self.current_epoch}.ckpt"))
 
 

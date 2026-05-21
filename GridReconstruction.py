@@ -10,14 +10,13 @@ import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GridReconstruction training')
-    parser.add_argument('--weight_opacity', action='store_true', help='Weight opacity separately in loss')
     parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
     parser.add_argument('--double_channels', action='store_true', help='Double the number of channels')
     parser.add_argument('--overfit', action='store_true', help='Double the number of channels')
     parser.add_argument('--res_net', action='store_true', help='Use a res net like structure')
     parser.add_argument('--lr', type=float, default=5e-4, help='Initial learning rate')
+    parser.add_argument('--loss_method', type=str, default="WO", help='Initial learning rate')
     parser.add_argument("--low_acc", action='store_true', help="Use a lower floating point precision for testing")
-    parser.add_argument("--dice_loss", action='store_true', help="Use dice loss")
 
 
 
@@ -219,18 +218,17 @@ class GridReconstructionNetwork(nn.Module):
 
 
 class GridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, weight_opacity=False, small_bottleneck=False, double_channels=False, res_net=False, dice_loss=false, learning_rate=5e-4):
+    def __init__(self, ckpt_dir, loss_method, small_bottleneck=False, double_channels=False, res_net=False, learning_rate=5e-4):
         super().__init__()
         self.model = GridReconstructionNetwork(small_bottleneck, double_channels, res_net)
         self.lr = learning_rate
-        self.weight_opacity = weight_opacity
         self.small_bottleneck = small_bottleneck
         self.double_channels = double_channels
         self.res_net = res_net
         self.loss_func = nn.MSELoss()
         self.save_hyperparameters()
+        self.loss_method = loss_method
         self.dice_loss_score = DiceScore(num_classes=2, include_background=False, input_format='index')
-        self.use_dice_loss = dice_loss
         self.ckpt_dir = ckpt_dir
 
 
@@ -250,6 +248,7 @@ class GridReconstruction(L.LightningModule):
         loss = self.loss_func(representation, reconstruction)# * weight.repeat(1, 3))
 
         self.log(stage + '_loss', loss)
+        self.log(stage + '_mse_loss', loss)
 
         opacity_loss = self.loss_func(representation[:, -1], reconstruction[:, -1])
         self.log(stage + '_opacity_loss', opacity_loss)
@@ -257,19 +256,20 @@ class GridReconstruction(L.LightningModule):
         colour_loss = self.loss_func(representation[:, :-1], reconstruction[:, :-1])
         self.log(stage + '_colour_loss', colour_loss)
 
-
-
-        if self.weight_opacity:
-            loss = opacity_loss + colour_loss
-
         del opacity_loss, colour_loss
         dice_loss = self.get_dice_loss(representation, reconstruction)
         del representation, reconstruction
 
         self.log(stage + '_dice_loss', dice_loss)
 
-        if self.use_dice_loss:
-            loss = loss + dice_loss
+        if self.loss_method == "WO":
+            loss = opacity_loss + colour_loss
+        elif self.loss_method == "MSE":
+            loss = loss
+        elif self.loss_method == "Dice":
+            loss = -dice_loss
+        elif self.loss_method == "WO+Dice":
+            loss = opacity_loss + colour_loss - dice_loss * 0.0004
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -301,14 +301,14 @@ if __name__ == "__main__":
     dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=2, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
-    ckpt_dir = f"GridReconstructionCheckpoints/BFLOATweight_opacity={args.weight_opacity}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}_res_net={args.res_net}"
+    ckpt_dir = f"GridReconstructionCheckpoints/loss={args.loss_method}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}"
 
-    model = GridReconstruction(ckpt_dir=ckpt_dir, weight_opacity=args.weight_opacity, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr, dice_loss=args.dice_loss)
+    model = GridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr)
 
     if args.overfit:
         ckpt_dir += "_overfit"
-    if args.dice_loss:
-        ckpt_dir += "_dice_loss"
+    if args.res_net:
+        ckpt_dir += "_resnet"
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
     epochs = 200 if args.overfit else 20

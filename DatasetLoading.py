@@ -195,14 +195,59 @@ class GridDataset(Dataset):
 
         return idx_tensors, representation_tensor, alphas_tensor
 
-class LatentGridTestingDataset(GridDataset):
+class RawGridDataset(GridDataset):
+    def load_raw_representation(self, path: str, device: Union[str, torch.device] = 'cpu') -> Tuple[
+        List[torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Load the file at `path` and return (indices_list, values_tensor, colour_tensor).
+
+        - indices_list: list of 3 torch tensors, each shape (N,), dtype torch.uint8, on `device`
+        - values_tensor: torch tensor shape (N, 28), dtype torch.float32, on `device`
+        - colour_tensor: torch tensor shape (N, 3), dtype torch.float32, on `device`
+        """
+        full_path = os.path.join(self.representation_data_dir, path)
+        data = np.load(full_path)
+        if 'indices' not in data or 'values' not in data or 'colour' not in data:
+            raise ValueError("File must contain 'indices', 'values' and 'colour' arrays")
+
+        idx_np = data['indices']
+        vals_np = data['values']
+        colour_np = data['colour']
+        directions_np = data['directions']
+
+        if idx_np.ndim != 2 or idx_np.shape[0] != 3:
+            raise ValueError("Saved 'indices' must have shape (3, N)")
+        if vals_np.ndim != 2 or vals_np.shape[1] != 28 or vals_np.shape[0] != idx_np.shape[1]:
+            raise ValueError("Saved 'values' must have shape (N, 28) matching indices length")
+        if colour_np.ndim != 2 or colour_np.shape[1] != 3 or colour_np.shape[0] != idx_np.shape[1]:
+            raise ValueError("Saved 'colour' must have shape (N, 3) matching indices length")
+
+        dev = torch.device(device)
+
+        # Convert to torch tensors and move to device
+        idx_tensors = [torch.from_numpy(idx_np[i]).to(device=dev, dtype=torch.int).flatten() for i in range(3)]
+        vals_tensor = torch.from_numpy(vals_np).to(device=dev, dtype=torch.float32)
+        colour_tensor = torch.from_numpy(colour_np).to(device=dev, dtype=torch.float32)
+        directions = torch.from_numpy(directions_np).to(device=dev, dtype=torch.float32)
+
+        return idx_tensors, vals_tensor, colour_tensor, directions
+
     def __getitem__(self, idx):
         piece_name = self.piece_names[idx]
-        idx_tensors, vals_tensor, colour_tensor, directions = self.load_grid_representation(piece_name, load_colours_and_dirs=True)
+        idx_tensors, vals_tensor, colour_tensor, directions = self.load_raw_representation(piece_name)
 
         ids = torch.randperm(directions.shape[0])[:20]
 
         return directions[ids], vals_tensor[ids, 1:], colour_tensor[ids], vals_tensor[ids, 0]
+
+#class LatentGridTestingDataset(GridDataset):
+#    def __getitem__(self, idx):
+#        piece_name = self.piece_names[idx]
+#        idx_tensors, vals_tensor, colour_tensor, directions = self.load_grid_representation(piece_name, load_colours_and_dirs=True)
+#
+#        ids = torch.randperm(directions.shape[0])[:20]
+#
+#        return directions[ids], vals_tensor[ids, 1:], colour_tensor[ids], vals_tensor[ids, 0]
 
 class FixedGridDataset(GridDataset):
     def create_grid_representation(self, idx_tensors, vals_tensor, alphas):

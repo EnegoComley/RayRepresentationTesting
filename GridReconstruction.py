@@ -256,21 +256,24 @@ class GridReconstruction(L.LightningModule):
         colour_loss = self.loss_func(representation[:, :-1], reconstruction[:, :-1])
         self.log(stage + '_colour_loss', colour_loss)
 
-        del opacity_loss, colour_loss
         dice_loss = self.get_dice_loss(representation, reconstruction)
         del representation, reconstruction
 
         self.log(stage + '_dice_loss', dice_loss)
 
         if self.loss_method == "WO":
-            loss = opacity_loss + colour_loss
+            final_loss = opacity_loss + colour_loss
         elif self.loss_method == "MSE":
-            loss = loss
+            final_loss = loss
         elif self.loss_method == "Dice":
-            loss = -dice_loss
+            final_loss = -dice_loss
         elif self.loss_method == "WO+Dice":
-            loss = opacity_loss + colour_loss - dice_loss * 0.0004
-        return loss
+            final_loss = opacity_loss + colour_loss - dice_loss * 0.0004
+        else:
+            final_loss = loss
+
+        del opacity_loss, colour_loss, dice_loss
+        return final_loss
 
     def training_step(self, batch, batch_idx):
 
@@ -303,12 +306,13 @@ if __name__ == "__main__":
     L.seed_everything(42)
     ckpt_dir = f"GridReconstructionCheckpoints/loss={args.loss_method}_small_bottleneck={args.small_bottleneck}_double_channels={args.double_channels}_learning_rate={args.lr}"
 
-    model = GridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr)
-
     if args.overfit:
         ckpt_dir += "_overfit"
     if args.res_net:
         ckpt_dir += "_resnet"
+
+    model = GridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, small_bottleneck=args.small_bottleneck, double_channels=args.double_channels, res_net=args.res_net, learning_rate=args.lr)
+
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
     epochs = 200 if args.overfit else 20

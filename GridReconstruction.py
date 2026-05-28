@@ -209,11 +209,20 @@ class GridReconstructionNetwork(nn.Module):
                 ResnetBlock3D(128 * scale),
                 nn.Conv3d(128 * scale, 32, kernel_size=3, stride=1, padding=1))
 
+        self.sigmoid = nn.Sigmoid()
+
 
 
     def forward(self, representation):
         x = self.encoder(representation)
         x = self.decoder(x)
+        opacity = x[:, -1:]
+        colour = x[:, :-1]
+        opacity = self.sigmoid(opacity)
+        x = torch.cat((colour, opacity), dim=1)
+        #if torch.isnan(x).any():
+        #    print("NaN values found in output!")
+        #    print(colour.isnan().sum(), opacity.isnan().sum())
         return x
 
 
@@ -231,15 +240,16 @@ class GridReconstruction(L.LightningModule):
         self.dice_loss_score = DiceScore(num_classes=2, include_background=False, input_format='index')
         self.ckpt_dir = ckpt_dir
 
-
-    def categorise_representation(self, representation, threshold=0.3):
-        # Representation is shape (batch_size, 32, 200, 200, 200)
-        categories = (representation[:, -1:] > threshold).long()
-        return categories
-
-    def get_dice_loss(self, representation, reconstruction):
-        dice_loss = self.dice_loss_score(self.categorise_representation(representation), self.categorise_representation(reconstruction))
-        return dice_loss
+    def get_dice_score(self, representation, reconstruction):
+        representation_opacity = representation[:, -1:]
+        reconstruction_opacity = reconstruction[:, -1:]
+        dice_score = 2 * torch.sum(representation_opacity * reconstruction_opacity, dim=[2, 3, 4]) / (torch.sum(representation_opacity, dim=[2, 3, 4]) + torch.sum(reconstruction_opacity, dim=[2, 3, 4]) + 1e-8)
+        dice_score = torch.mean(dice_score)
+        #if torch.isnan(dice_score):
+        #    print("NaN values found in dice score!")
+        return dice_score
+        #dice_loss = self.dice_loss_score(self.categorise_representation(representation), self.categorise_representation(reconstruction))
+        #return dice_loss
 
     def calculate_loss(self, batch, stage):
         representation = batch
@@ -256,19 +266,20 @@ class GridReconstruction(L.LightningModule):
         colour_loss = self.loss_func(representation[:, :-1], reconstruction[:, :-1])
         self.log(stage + '_colour_loss', colour_loss)
 
-        dice_loss = self.get_dice_loss(representation, reconstruction)
+        dice_loss = self.get_dice_score(representation, reconstruction)
         del representation, reconstruction
 
         self.log(stage + '_dice_loss', dice_loss)
+        dice_loss = (1 - dice_loss) * 0.25
 
         if self.loss_method == "WO":
             final_loss = opacity_loss + colour_loss
         elif self.loss_method == "MSE":
             final_loss = loss
         elif self.loss_method == "Dice":
-            final_loss = -dice_loss
+            final_loss = opacity_loss #= dice_loss
         elif self.loss_method == "WO+Dice":
-            final_loss = opacity_loss + colour_loss - dice_loss * 0.0004
+            final_loss = opacity_loss + colour_loss + dice_loss
         else:
             final_loss = loss
 

@@ -17,6 +17,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=5e-4, help='Initial learning rate')
     parser.add_argument('--loss_method', type=str, default="WO", help='Initial learning rate')
     parser.add_argument("--low_acc", action='store_true', help="Use a lower floating point precision for testing")
+    parser.add_argument("--no_logger", action='store_false', help="Disable logging to Weights and Biases")
 
 
 
@@ -234,7 +235,8 @@ class GridReconstruction(L.LightningModule):
         self.small_bottleneck = small_bottleneck
         self.double_channels = double_channels
         self.res_net = res_net
-        self.loss_func = nn.MSELoss()
+        self.mse_loss = nn.MSELoss()
+        self.loss_func = lambda a, b: self.mse_loss(a, b) ** 0.5
         self.save_hyperparameters()
         self.loss_method = loss_method
         self.dice_loss_score = DiceScore(num_classes=2, include_background=False, input_format='index')
@@ -245,20 +247,17 @@ class GridReconstruction(L.LightningModule):
         reconstruction_opacity = reconstruction[:, -1:]
         dice_score = 2 * torch.sum(representation_opacity * reconstruction_opacity, dim=[2, 3, 4]) / (torch.sum(representation_opacity, dim=[2, 3, 4]) + torch.sum(reconstruction_opacity, dim=[2, 3, 4]) + 1e-8)
         dice_score = torch.mean(dice_score)
-        #if torch.isnan(dice_score):
-        #    print("NaN values found in dice score!")
+
         return dice_score
-        #dice_loss = self.dice_loss_score(self.categorise_representation(representation), self.categorise_representation(reconstruction))
-        #return dice_loss
 
     def calculate_loss(self, batch, stage):
         representation = batch
         reconstruction = self.model(representation)
 
-        loss = self.loss_func(representation, reconstruction)# * weight.repeat(1, 3))
+        loss = self.loss_func(representation, reconstruction)
 
         self.log(stage + '_loss', loss)
-        self.log(stage + '_mse_loss', loss)
+        self.log(stage + '_rmse_loss', loss)
 
         opacity_loss = self.loss_func(representation[:, -1], reconstruction[:, -1])
         self.log(stage + '_opacity_loss', opacity_loss)
@@ -266,20 +265,25 @@ class GridReconstruction(L.LightningModule):
         colour_loss = self.loss_func(representation[:, :-1], reconstruction[:, :-1])
         self.log(stage + '_colour_loss', colour_loss)
 
+        mask_colour_loss = self.loss_func(representation[:, :-1], reconstruction[:, :-1] * representation[:, -1:].repeat(1, reconstruction.size(1) - 1, 1, 1, 1))
+        self.log(stage + '_mask_colour_loss', mask_colour_loss)
+
         dice_loss = self.get_dice_score(representation, reconstruction)
         del representation, reconstruction
 
         self.log(stage + '_dice_loss', dice_loss)
-        dice_loss = (1 - dice_loss) * 0.25
+        dice_loss = (1 - dice_loss)
 
         if self.loss_method == "WO":
             final_loss = opacity_loss + colour_loss
         elif self.loss_method == "MSE":
             final_loss = loss
         elif self.loss_method == "Dice":
-            final_loss = opacity_loss #= dice_loss
+            final_loss = dice_loss
         elif self.loss_method == "WO+Dice":
             final_loss = opacity_loss + colour_loss + dice_loss
+        elif self.loss_method == "Dice+Mask":
+            final_loss = dice_loss + opacity_loss + mask_colour_loss
         else:
             final_loss = loss
 
@@ -310,7 +314,8 @@ class GridReconstruction(L.LightningModule):
 
 if __name__ == "__main__":
 
-    wandb_logger = WandbLogger(project='GridReconstruction')
+    wandb_logger = False if args.no_logger else WandbLogger(project='GridReconstruction')
+
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
     dataset_loader = RepairDatasetLoader(batch_size=1, dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=2, data_dir=datasets_path, overfit=args.overfit)
@@ -328,5 +333,5 @@ if __name__ == "__main__":
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
     epochs = 200 if args.overfit else 20
     precision = "16-true" if args.low_acc else "32-true"
-    trainer = L.Trainer(max_epochs=epochs, logger=wandb_logger, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback], precision=precision)
+    trainer = L.Trainer(max_epochs=epochs, accelerator='gpu', accumulate_grad_batches=20, callbacks=[checkpoint_callback], precision=precision, logger=wandb_logger)
     trainer.fit(model, datamodule=dataset_loader)

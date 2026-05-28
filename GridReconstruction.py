@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=5e-4, help='Initial learning rate')
     parser.add_argument('--loss_method', type=str, default="WO", help='Initial learning rate')
     parser.add_argument("--low_acc", action='store_true', help="Use a lower floating point precision for testing")
-    parser.add_argument("--no_logger", action='store_false', help="Disable logging to Weights and Biases")
+    parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
 
 
 

@@ -104,35 +104,28 @@ class GridReconstructionNetwork(nn.Module):
                 )
             else:
                 self.encoder = nn.Sequential(
-                    nn.Conv3d(32, 64 * scale, kernel_size=3, stride=1, padding=13), # 200 -> 224
+                    nn.Conv3d(32, 64 * scale, kernel_size=3, stride=1, padding=1), # 96 -> 96
                     nn.BatchNorm3d(64 * scale),
                     nn.ReLU(),
                     nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(64 * scale),
                     nn.ReLU(),
-                    nn.MaxPool3d(2),  # 224 -> 112
+                    nn.MaxPool3d(2),  # 96 -> 48
                     nn.Conv3d(64 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
-                    nn.MaxPool3d(2),  # 112 -> 56
+                    nn.MaxPool3d(2),  # 48 -> 24
                     nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
-                    nn.MaxPool3d(2),  # 56 -> 28
-                    nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm3d(128 * scale),
-                    nn.ReLU(),
-                    nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm3d(128 * scale),
-                    nn.ReLU(),
-                    nn.MaxPool3d(2),  # 28 -> 14
+                    nn.MaxPool3d(2),  # 24 -> 12
                     nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
                     nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
-                    nn.MaxPool3d(2),  # 14 -> 7
+                    nn.MaxPool3d(2),  # 12 -> 6
                     nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
@@ -142,31 +135,25 @@ class GridReconstructionNetwork(nn.Module):
                 )
 
                 self.decoder = nn.Sequential(
-                    nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 7 -> 14
+                    nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 6 -> 12
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
                     nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
-                    nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 14 -> 28
+                    nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 12 -> 24
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
                     nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
-                    nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 28 -> 56
-                    nn.BatchNorm3d(128 * scale),
-                    nn.ReLU(),
-                    nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-                    nn.BatchNorm3d(128 * scale),
-                    nn.ReLU(),
-                    nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 56 -> 112
+                    nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 24 -> 48
                     nn.BatchNorm3d(128 * scale),
                     nn.ReLU(),
                     nn.Conv3d(128 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm3d(64 * scale),
                     nn.ReLU(),
-                    nn.ConvTranspose3d(64 * scale, 64 * scale, kernel_size=4, stride=2, padding=13),  # 112 -> 200
+                    nn.ConvTranspose3d(64 * scale, 64 * scale, kernel_size=4, stride=2, padding=1),  # 48 -> 96
                     nn.BatchNorm3d(64 * scale),
                     nn.ReLU(),
                     nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),

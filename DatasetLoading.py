@@ -253,7 +253,7 @@ class FixedGridDataset(GridDataset):
     def create_grid_representation(self, idx_tensors, vals_tensor, alphas):
         representation_values = torch.cat([vals_tensor, alphas], dim=1)
 
-        representation = torch.zeros([200, 200, 200, representation_values.shape[1]], dtype=torch.float32)
+        representation = torch.zeros([96, 96, 96, representation_values.shape[1]], dtype=torch.float32)
         representation[idx_tensors[0], idx_tensors[1], idx_tensors[2]] = representation_values
         representation = torch.permute(representation, (3, 0, 1, 2))
 

@@ -259,7 +259,7 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
-    batch_size_dict = {1 : {"BS" : 20, "acc" : 1}, 2 : {"BS" : 10, "acc" : 2}, 3 : {"BS" : 7, "acc" : 3}}[args.scale]
+    batch_size_dict = {1 : {"BS" : 20, "acc" : 1}, 2 : {"BS" : 10, "acc" : 2}, 3 : {"BS" : 7, "acc" : 3}, 4 : {"BS" : 5, "acc" : 4}}[args.scale]
 
     dataset_loader = RepairDatasetLoader(batch_size=batch_size_dict["BS"], dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
@@ -276,7 +276,7 @@ if __name__ == "__main__":
         run_name += f"_lr={args.lr}"
 
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='GridReconstruction96')
-    ckpt_dir = f"GridReconstructionCheckpoints/"
+    ckpt_dir = f"GridReconstructionCheckpoints/{run_name}/"
 
     model = GridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, small_bottleneck=args.small_bottleneck, learning_rate=args.lr, scale=args.scale)
 

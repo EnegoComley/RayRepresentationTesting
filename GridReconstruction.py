@@ -253,7 +253,6 @@ class GridReconstruction(L.LightningModule):
 
 if __name__ == "__main__":
 
-    wandb_logger = False if args.no_logger else WandbLogger(project='GridReconstruction96')
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
@@ -262,15 +261,19 @@ if __name__ == "__main__":
     dataset_loader = RepairDatasetLoader(batch_size=batch_size_dict["BS"], dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
-    ckpt_dir = f"GridReconstructionCheckpoints/loss={args.loss_method}_scale={args.scale}"
+    run_name = f"loss={args.loss_method}_scale={args.scale}"
+
 
 
     if args.overfit:
-        ckpt_dir += "_overfit"
+        run_name += "_overfit"
     if args.small_bottleneck:
-        ckpt_dir += "_small_bottleneck"
+        run_name += "_small_bottleneck"
     if args.lr != 1e-3:
-        ckpt_dir += f"_lr={args.lr}"
+        run_name += f"_lr={args.lr}"
+
+    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='GridReconstruction96')
+    ckpt_dir = f"GridReconstructionCheckpoints/"
 
     model = GridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, small_bottleneck=args.small_bottleneck, learning_rate=args.lr, scale=args.scale)
 

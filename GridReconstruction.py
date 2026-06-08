@@ -256,7 +256,10 @@ if __name__ == "__main__":
     wandb_logger = False if args.no_logger else WandbLogger(project='GridReconstruction96')
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
-    dataset_loader = RepairDatasetLoader(batch_size=10, dataset_type="FixedGridDataset",
+
+    batch_size_dict = {1 : {"BS" : 20, "acc" : 1}, 2 : {"BS" : 10, "acc" : 2}, 3 : {"BS" : 7, "acc" : 3}}[args.scale]
+
+    dataset_loader = RepairDatasetLoader(batch_size=batch_size_dict["BS"], dataset_type="FixedGridDataset",
                                          representation_folder_name="gridswithRepresentation", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
     ckpt_dir = f"GridReconstructionCheckpoints/loss={args.loss_method}_scale={args.scale}"
@@ -275,5 +278,5 @@ if __name__ == "__main__":
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
     epochs = 200 if args.overfit else 20
     precision = "16-true" if args.low_acc else "32-true"
-    trainer = L.Trainer(max_epochs=epochs, accelerator='gpu', accumulate_grad_batches=2, callbacks=[checkpoint_callback], precision=precision, logger=wandb_logger)
+    trainer = L.Trainer(max_epochs=epochs, accelerator='gpu', accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback], precision=precision, logger=wandb_logger)
     trainer.fit(model, datamodule=dataset_loader)

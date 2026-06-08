@@ -103,7 +103,7 @@ class GridReconstructionNetwork(nn.Module):
             nn.Conv3d(128 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm3d(64 * scale),
             nn.ReLU(),
-            nn.Conv3d(128 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
+            nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm3d(64 * scale),
             nn.ReLU(),
             nn.ConvTranspose3d(64 * scale, 64 * scale, kernel_size=4, stride=2, padding=1),  # 48 -> 96
@@ -135,8 +135,8 @@ class GridReconstructionNetwork(nn.Module):
                 nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
                 nn.BatchNorm3d(128 * scale),
                 nn.ReLU(),
-                nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm3d(64 * scale),
+                nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm3d(128 * scale),
                 nn.ReLU(),
             )
 

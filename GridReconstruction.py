@@ -214,6 +214,9 @@ class GridReconstruction(L.LightningModule):
         self.log(stage + '_dice_loss', dice_loss)
         dice_loss = (1 - dice_loss)
 
+        total_loss = loss + opacity_loss + colour_loss + dice_loss + mask_colour_loss
+        self.log(stage + '_total_loss', total_loss)
+
         if self.loss_method == "WO":
             final_loss = opacity_loss + colour_loss
         elif self.loss_method == "MSE":
@@ -245,8 +248,8 @@ class GridReconstruction(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_total_loss"}
 
 
 

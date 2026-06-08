@@ -266,7 +266,7 @@ if __name__ == "__main__":
         ckpt_dir += "_overfit"
     if args.small_bottleneck:
         ckpt_dir += "_small_bottleneck"
-    if args.learning_rate != 1e-3:
+    if args.lr != 1e-3:
         ckpt_dir += f"_lr={args.lr}"
 
     model = GridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, small_bottleneck=args.small_bottleneck, learning_rate=args.lr, scale=args.scale)

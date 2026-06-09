@@ -5,6 +5,7 @@ import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 import torch.nn as nn
 from torchmetrics.segmentation import DiceScore
+from pytorch_lightning.callbacks import LearningRateMonitor
 
 import argparse
 
@@ -282,7 +283,8 @@ if __name__ == "__main__":
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
-    epochs = 200 if args.overfit else 20
+    epochs = 200 if args.overfit else 30
     precision = "16-true" if args.low_acc else "32-true"
-    trainer = L.Trainer(max_epochs=epochs, accelerator='gpu', accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback], precision=precision, logger=wandb_logger)
+    lr_monitor = LearningRateMonitor(logging_interval='step')
+    trainer = L.Trainer(max_epochs=epochs, accelerator='gpu', accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger)
     trainer.fit(model, datamodule=dataset_loader)

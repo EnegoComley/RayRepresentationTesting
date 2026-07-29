@@ -4,21 +4,67 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from matplotlib import cm
+from SHFunctions import eval_sh_bases
 
 
+def append_vector_to_dimension_combinations(vectors: torch.Tensor) -> torch.Tensor:
+    """
+    Given an N by 3 PyTorch tensor, append each vector to all combinations of products of its dimensions.
+
+    For a vector [x, y, z], this creates all combinations like:
+    [x*x, x*y, x*z, y*x, y*y, y*z, z*x, z*y, z*z, x, y, z]
+
+    Args:
+        vectors: A PyTorch tensor of shape (N, 3)
+
+    Returns:
+        A tensor of shape (N, 12) with all dimension product combinations plus original vector
+    """
+    if vectors.dim() != 2 or vectors.shape[1] != 3:
+        raise ValueError(f"Expected vectors of shape (N, 3), got {vectors.shape}")
+
+    N = vectors.shape[0]
+    x = vectors[:, 0]  # (N,)
+    y = vectors[:, 1]  # (N,)
+    z = vectors[:, 2]  # (N,)
+
+    # Generate all 9 combinations of products (3x3 matrix flattened)
+    combinations = [
+        x * x,  # xx
+        x * y,  # xy
+        x * z,  # xz
+        y * y,  # yy
+        y * z,  # yz
+        z * z,  # zz
+    ]
+
+    # Append the original vector components
+    combinations.extend([x, y, z])
+
+    # Stack all combinations into a single tensor (N, 12)
+    result = torch.stack(combinations, dim=1)
+
+    return result
 
 class ColourPredictionPredictionNetwork(nn.Module):
     def __init__(self, latent_size):
         super().__init__()
 
-
-        self.representation_encoder = nn.Sequential(nn.Linear(27, 128),
+        self.representation_encoder = nn.Sequential(nn.Dropout(0.1), nn.Linear(9, 30),
                                                nn.ReLU(),
-                                               nn.Linear(128, latent_size),
+                                               nn.Linear(30, latent_size),
                                                nn.ReLU())
 
-        self.head = nn.Sequential(nn.Linear(latent_size + 3, 3))
+        self.head = nn.Sequential(nn.Dropout(0.2),
+            nn.Linear(latent_size * 2, 48),
+                                  nn.ReLU(),
+                                  nn.Linear(48, 1),
+                                  nn.ReLU())
 
+        self.direction_encoder = nn.Sequential(nn.Linear(9, 48),
+                                               nn.ReLU(),
+                                               nn.Linear(48, latent_size),
+                                               nn.ReLU())
 
 
     def forward(self, representation, direction):
@@ -26,11 +72,96 @@ class ColourPredictionPredictionNetwork(nn.Module):
         return self.get_colour_from_latent(x, direction)
 
     def get_latent_representation(self, representation):
-        return self.representation_encoder(representation)
+        b, _ = representation.shape
+        x = representation.view(b * 3, -1)
+        x = self.representation_encoder(x)
+        x = x.view(b, -1)
+        return x
 
     def get_colour_from_latent(self, latent_representation, direction):
-        x = torch.cat((latent_representation, direction), dim=1)
-        return self.head(x)
+        b, _ = latent_representation.shape
+        x = latent_representation.view(b * 3, -1)
+        encoded_direction = self.direction_encoder(append_vector_to_dimension_combinations(direction))
+        encoded_direction = (
+            encoded_direction[:, None, :]
+            .expand(-1, 3, -1)
+            .reshape(b * 3, -1)
+        )
+        x = torch.cat((x, encoded_direction), dim=1)
+        #x = x * encoded_direction
+        x = self.head(x)
+        x = x.view(b, -1)
+        return x
+
+
+class ColourPredictionPredictionNetworkSimple(nn.Module):
+    def __init__(self, latent_size):
+        super().__init__()
+
+        self.head = nn.Sequential(#nn.Linear(9, 9),
+                                  #nn.ReLU(),
+                                  #nn.Linear(9, 1),
+                                  nn.ReLU())
+
+        self.direction_encoder = nn.Sequential(nn.Linear(9, 9))
+
+
+    def forward(self, representation, direction):
+        x = self.get_latent_representation(representation)
+        return self.get_colour_from_latent(x, direction)
+
+    def get_latent_representation(self, representation):
+        return representation
+
+
+    def get_colour_from_latent(self, latent_representation, direction):
+        b, _ = latent_representation.shape
+        x = latent_representation.view(b * 3, -1)
+        dir_squared = direction ** 2
+        dir_mult = torch.cat((direction[..., 0:1] * direction[..., 1:2], direction[..., 0:1] * direction[..., 2:3], direction[..., 1:2] * direction[..., 2:3]), dim=1)
+        encoded_direction = self.direction_encoder(torch.cat((direction, dir_squared, dir_mult), dim=1))
+        encoded_direction = (
+            encoded_direction[:, None, :]
+            .expand(-1, 3, -1)
+            .reshape(b * 3, -1)
+        )
+        #x = torch.cat((x, encoded_direction), dim=1)
+        x = x * encoded_direction
+        x = self.head(torch.sum(x, dim=-1, keepdim=True))
+        x = x.view(b, -1)
+        return x
+
+
+
+
+class ColourPredictionPredictionNetworkSH(nn.Module):
+    def __init__(self, latent_size):
+        super().__init__()
+
+        self.latent_encoder = nn.Sequential(nn.Linear(9, latent_size),
+                                            nn.ReLU(),)
+        self.latent_decoder = nn.Sequential(nn.Linear(latent_size, 9))
+
+    def SHRender(self, viewdirs, features):
+        sh_mult = eval_sh_bases(2, viewdirs)[:, None]
+        rgb_sh = features.view(-1, 3, sh_mult.shape[-1])
+        rgb = torch.relu(torch.sum(sh_mult * rgb_sh, dim=-1) + 0.5)
+        return rgb
+
+    def forward(self, representation, direction):
+        x = self.get_latent_representation(representation)
+        return self.get_colour_from_latent(x, direction)
+
+    def get_latent_representation(self, representation):
+        b, _ = representation.shape
+        x = representation.view(b * 3, -1)
+        return self.latent_encoder(x)
+
+
+    def get_colour_from_latent(self, latent_representation, direction):
+        b, _ = latent_representation.shape
+
+        return self.SHRender(direction, x)
 
 def plot_colored_voxels(coords, colours, axis_names=None, assume_normalized=True, figsize=(8, 8), edgecolor=None, axis_flips = (1, -1, 1)):
     """
@@ -49,6 +180,8 @@ def plot_colored_voxels(coords, colours, axis_names=None, assume_normalized=True
 
     if not assume_normalized and cols.size and cols.max() > 1.0:
         cols = cols / 255.0
+
+
 
     cols = np.asarray(cols, dtype=float)
     if cols.ndim != 2 or cols.shape[1] < 3:

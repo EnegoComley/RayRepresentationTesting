@@ -104,15 +104,15 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
         self.train_split_dict = {"puzzles": self.puzzle_train_split, "pieces": self.train_pieces}
         self.val_split_dict = {"puzzles": self.puzzle_val_split, "pieces": self.val_pieces}
 
-        self.latent2representation = ColourPredictionPredictionNetwork(latent_size=31)
-        self.latent2representation.load_state_dict(torch.load("TensoRFColourPrediction.pth"))
-        self.latent2representation.eval()
+        #self.latent2representation = ColourPredictionPredictionNetwork(latent_size=31)
+        #self.latent2representation.load_state_dict(torch.load("TensoRFColourPrediction.pth"))
+        #self.latent2representation.eval()
 
         self.dataset_info_dict = {
             "puzzle_to_pieces": self.puzzle_to_pieces,
             "data_dir": self.representation_data_dir,
             "pieces_to_puzzles": self.pieces_to_puzzles,
-            "latent2representation": self.latent2representation,
+            #"latent2representation": self.latent2representation,
             "kwargs": kwargs
                                   }
 
@@ -139,7 +139,7 @@ class GridDataset(Dataset):
     def __init__(self, split_dict, dataset_info_dict):
         self.piece_names = split_dict["pieces"]
         self.representation_data_dir = dataset_info_dict["data_dir"]
-        self.latent2representation = dataset_info_dict["latent2representation"]
+        #self.latent2representation = dataset_info_dict["latent2representation"]
 
     def __len__(self):
         return len(self.piece_names)
@@ -194,6 +194,39 @@ class GridDataset(Dataset):
             return idx_tensors, representation_tensor, alphas_tensor, colour_tensor, directions
 
         return idx_tensors, representation_tensor, alphas_tensor
+
+class InterpolatableGridDataset(GridDataset):
+    def __init__(self, split_dict, dataset_info_dict):
+        super().__init__(split_dict, dataset_info_dict)
+
+    def rotate_grid(self, grid, rotation):
+        return grid
+
+    def compose_grid(self, decomposed_tensor):
+        return torch.einsum('pa,pb,pc->pabc', decomposed_tensor[0], decomposed_tensor[1], decomposed_tensor[2])
+
+    def load_grid_representation(self, path, rotation=None):
+        full_path = os.path.join(self.representation_data_dir, path)
+        data = np.load(full_path)
+        decomposed_density_tensor_numpy = data['decomposed_density_tensor']
+        decomposed_colour_tensor_numpy = data['decomposed_colour_tensor']
+        opacity_multiplier = data['opacity_multiplier']
+
+        decomposed_density_tensor = torch.from_numpy(decomposed_density_tensor_numpy).to(dtype=torch.float32)
+        decomposed_colour_tensor = torch.from_numpy(decomposed_colour_tensor_numpy).to(dtype=torch.float32)
+
+        grid = torch.cat((self.compose_grid(decomposed_density_tensor), self.compose_grid(decomposed_colour_tensor)), dim=0)
+        if rotation is not None:
+            grid = self.rotate_grid(grid, rotation)
+
+        return grid, opacity_multiplier
+
+    def __getitem__(self, idx):
+        piece_name = self.piece_names[idx]
+        grid, opacity_multiplier = self.load_grid_representation(piece_name, rotation=None)
+        return grid, opacity_multiplier
+
+
 
 class RawGridDataset(GridDataset):
     def load_raw_representation(self, path: str, device: Union[str, torch.device] = 'cpu') -> Tuple[

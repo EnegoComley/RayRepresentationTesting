@@ -190,7 +190,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
         self.log(stage + '_mse_loss', mse_loss)
 
-        rmse_loss = self.dice_loss_score(grid, reconstruction)
+        rmse_loss = mse_loss ** 0.5
         self.log(stage + '_rmse_loss', rmse_loss)
 
         density_grid = grid[:, :96]

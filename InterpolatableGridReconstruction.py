@@ -99,7 +99,10 @@ class InterpolatableGridReconstructionNetwork(nn.Module):
             nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm3d(64 * scale),
             nn.ReLU(),
-            nn.Conv3d(64 * scale, 32, kernel_size=3, stride=1, padding=1))
+            nn.Conv3d(64 * scale, 32 * scale, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm3d(32 * scale),
+            nn.ReLU(),
+            nn.Conv3d(32 * scale, 96+288, kernel_size=3, stride=1, padding=1),)
 
 
         if small_bottleneck:
@@ -257,7 +260,7 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
-    batch_size_dict = {1 : {"BS" : 3, "acc" : 10}, 2 : {"BS" : 2, "acc" : 15}, 3 : {"BS" : 1, "acc" : 30}}[args.scale]
+    batch_size_dict = {"BS" : 1, "acc" : 1} if args.no_logger else {1 : {"BS" : 3, "acc" : 10}, 2 : {"BS" : 2, "acc" : 15}, 3 : {"BS" : 1, "acc" : 30}}[args.scale]
 
     dataset_loader = RepairDatasetLoader(batch_size=batch_size_dict["BS"], dataset_type="InterpolatableGridDataset",
                                          representation_folder_name="interpolatableGrids", num_workers=3, data_dir=datasets_path)
@@ -280,5 +283,6 @@ if __name__ == "__main__":
     epochs = 200
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')
-    trainer = L.Trainer(max_epochs=epochs, accelerator='gpu', accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger)
+    accelerator = "cpu" if args.no_logger else "gpu"
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger)
     trainer.fit(model, datamodule=dataset_loader)

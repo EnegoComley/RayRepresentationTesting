@@ -221,10 +221,27 @@ class InterpolatableGridDataset(GridDataset):
 
         return grid, opacity_multiplier
 
+    def load_coloured_rays(self, piece_name, rotation):
+        data = np.load(f"../datasets/colouredRays/{piece_name}")
+        blank_edge_rays = torch.tensor(data["edge_rays"]).view(2, -1, 3)
+        rgb_rays = torch.tensor(data["rgbs"]).view(3, -1, 3)
+        blank_edge_ids = torch.randperm(blank_edge_rays.shape[1])[:50000]
+        blank_edge_rays = blank_edge_rays[:, blank_edge_ids]
+        rgb_ids = torch.randperm(rgb_rays.shape[1])[:50000]
+        rgb_rays = rgb_rays[:, rgb_ids]
+        blank_edge_rays_o = blank_edge_rays[0]
+        blank_edge_rays_d = blank_edge_rays[1]
+        rgb_rays_o = rgb_rays[0]
+        rgb_rays_d = rgb_rays[1]
+        rgb_rays_c = rgb_rays[2]
+        del data, blank_edge_rays, rgb_rays, rgb_ids, blank_edge_ids
+        return blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c
+
     def __getitem__(self, idx):
         piece_name = self.piece_names[idx]
         grid, opacity_multiplier = self.load_grid_representation(piece_name, rotation=None)
-        return grid, opacity_multiplier
+        blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = self.load_coloured_rays(piece_name, rotation=None)
+        return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c
 
 
 

@@ -377,6 +377,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
             final_loss = rmse_loss
 
         del opacity_loss, dice_loss, mask_colour_loss, density_loss, rmse_loss, mse_loss
+        self.log(stage + '_final_loss', final_loss)
+
         return final_loss
 
     def training_step(self, batch, batch_idx):
@@ -392,8 +394,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_rmse_loss"}
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
+        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_final_loss"}
 
 
 

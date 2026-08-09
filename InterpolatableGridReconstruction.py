@@ -311,7 +311,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
         edge_xyz_sampled, edge_z_vals, edge_ray_valid = self.RayManager.sample_ray(blank_edge_rays_o, blank_edge_rays_d)
         rgb_xyz_sampled, rgb_z_vals, rgb_ray_valid = self.RayManager.sample_ray(rgb_rays_o, rgb_rays_d)
-        density_reconstruction = reconstruction[:, 96]
+        density_reconstruction = reconstruction[:, :96]
         colour_reconstruction = reconstruction[:, 96:]
 
         edge_opacity = torch.sum(self.RayManager.get_opacity_weight(edge_xyz_sampled, density_reconstruction, edge_ray_valid, edge_z_vals), dim=-1)

@@ -222,15 +222,14 @@ class RayManager:
         B, _, _, _ = xyz_sampled.shape
 
         # xyz_sampled: (N,3) in [-1,1]
-        grid = xyz_sampled[ray_valid].view(B, 1, -1, 1, 3)
+        grid = xyz_sampled[ray_valid].view(B, -1, 1, 1, 3)
 
         sigma_feature = F.grid_sample(
             density_grid,  # (B,C,D,H,W)
             grid,
             mode="bilinear",
             align_corners=True,
-        )  # torch.Size([1, 96, 1, N, 1])
-
+        )  # (B, C, NPoints, 1, 1)
         sigma_feature = torch.sum(sigma_feature, dim=1).squeeze()
 
         validsigma = F.softplus(sigma_feature - 10)
@@ -243,8 +242,9 @@ class RayManager:
         return weight
 
     def NoBasisMatRender(self, features):
-        b, _ = features.shape
-        features = features.view(b, 3, -1)
+        b, nrays, nchannels = features.shape
+        assert nchannels == 288, "Expected 288 channels"
+        features = features.view(b, nrays, 3, -1)
         rgb = torch.sum(features, dim=-1)
         return rgb
 
@@ -257,14 +257,15 @@ class RayManager:
         app_mask = weight > 0.0001
 
         if app_mask.any():
-            grid = xyz_sampled[app_mask].view(B, 1, -1, 1, 3)
+            grid = xyz_sampled[app_mask].view(B, -1, 1, 1, 3)
 
             app_features = F.grid_sample(
                 colour_grid,      # (B,C,D,H,W)
                 grid,
                 mode="bilinear",
                 align_corners=True,
-            ).squeeze().T
+            ) # (B, C, NPoints, 1, 1)
+            app_features = app_features.view(B, colour_grid.shape[1], grid.shape[1]).permute(0, 2, 1)
 
             valid_rgbs = self.NoBasisMatRender(app_features)
             rgb[app_mask] = valid_rgbs
@@ -301,8 +302,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
 
     def density_to_opacity(self, density, opacity_multiplier):
-        summed_density = torch.sum(density, dim=1, keepdim=True)
-        density_grid = F.softplus(summed_density+10)
+        summed_density = torch.sum(density, dim=1)
+        density_grid = F.softplus(summed_density - 10)
         return 1. - torch.exp(-density_grid * opacity_multiplier)
 
     def calculate_loss(self, batch, stage):
@@ -359,6 +360,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
         if self.loss_method == "WO":
             final_loss = opacity_loss + mask_colour_loss
+        elif self.loss_method == "WD":
+            final_loss = density_loss + mask_colour_loss
         elif self.loss_method == "RMSE":
             final_loss = rmse_loss
         elif self.loss_method == "Dice":
@@ -428,6 +431,6 @@ if __name__ == "__main__":
     epochs = 200
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')
-    accelerator = "cpu" if args.no_logger else "gpu"
-    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger)
+    accelerator = "gpu"
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0)
     trainer.fit(model, datamodule=dataset_loader)

@@ -333,7 +333,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
 
         opacity_grid = self.density_to_opacity(density_grid, opacity_multiplier)
-        opacity_mask = (opacity_grid > 0.3).expand(-1, 288, -1, -1, -1)
+        opacity_mask = (opacity_grid.unsqueeze(1) > 0.3).expand(-1, 288, -1, -1, -1)
 
         reconstructed_opacity_grid = self.density_to_opacity(density_reconstruction, opacity_multiplier)
 

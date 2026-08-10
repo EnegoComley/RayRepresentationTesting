@@ -295,7 +295,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
     def get_dice_score(self, representation_opacity, reconstruction_opacity):
         representation_opacity = (representation_opacity > 0.5).float()
-        dice_score = 2 * torch.sum(representation_opacity * reconstruction_opacity, dim=[2, 3, 4]) / (torch.sum(representation_opacity, dim=[2, 3, 4]) + torch.sum(reconstruction_opacity, dim=[2, 3, 4]) + 1e-8)
+        dice_score = 2 * torch.sum(representation_opacity * reconstruction_opacity, dim=[1, 2, 3]) / (torch.sum(representation_opacity, dim=[1, 2, 3]) + torch.sum(reconstruction_opacity, dim=[1, 2, 3]) + 1e-8)
         dice_score = torch.mean(dice_score)
 
         return dice_score

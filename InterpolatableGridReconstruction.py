@@ -469,7 +469,7 @@ if __name__ == "__main__":
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
-    epochs = 200
+    epochs = 3000 if args.overfit else 200
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')
     accelerator = "gpu"

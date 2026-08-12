@@ -322,7 +322,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
         rgbs = self.RayManager.get_colour(rgb_xyz_sampled, colour_reconstruction, rgb_weight, False)
         del edge_xyz_sampled, edge_ray_valid, edge_z_vals, rgb_xyz_sampled, rgb_weight, rgb_z_vals , rgb_ray_valid
 
-        l1_loss = self.loss_method(grid, reconstruction)
+        l1_loss = self.loss_func(grid, reconstruction)
 
         self.log(stage + '_l1_loss', l1_loss)
 

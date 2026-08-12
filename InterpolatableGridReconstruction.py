@@ -444,7 +444,7 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
-    batch_size_dict = {"BS" : 1, "acc" : 1} if args.no_logger else {1 : {"BS" : 3, "acc" : 10}, 2 : {"BS" : 2, "acc" : 15}, 3 : {"BS" : 1, "acc" : 30}, 4 : {"BS" : 1, "acc" : 30}, 3 : {"BS" : 5, "acc" : 30}}[args.scale]
+    batch_size_dict = {"BS" : 1, "acc" : 1} if args.no_logger else {1 : {"BS" : 3, "acc" : 10}, 2 : {"BS" : 2, "acc" : 15}, 3 : {"BS" : 1, "acc" : 30}, 4 : {"BS" : 1, "acc" : 30}, 5 : {"BS" : 5, "acc" : 30}}[args.scale]
 
     dataset_loader = RepairDatasetLoader(batch_size=batch_size_dict["BS"], dataset_type="InterpolatableGridDataset",
                                          representation_folder_name="interpolatableGrids", num_workers=3, data_dir=datasets_path, overfit=args.overfit)

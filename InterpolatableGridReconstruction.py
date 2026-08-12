@@ -435,7 +435,7 @@ if __name__ == "__main__":
     if args.overfit:
         run_name = "overfit_" + run_name
 
-    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='InterpolatableGridReconstruction')
+    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='OverfitInterpolatableGridReconstruction' if args.overfit else 'InterpolatableGridReconstruction')
     ckpt_dir = f"GridReconstructionCheckpoints/{run_name}/"
 
     model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, small_bottleneck=args.small_bottleneck, learning_rate=args.lr, scale=args.scale)

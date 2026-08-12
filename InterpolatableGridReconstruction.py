@@ -307,6 +307,15 @@ class InterpolatableGridReconstruction(L.LightningModule):
         density_grid = F.softplus(summed_density - 10)
         return 1. - torch.exp(-density_grid * opacity_multiplier)
 
+    def NoBasisMatRender(self, features):
+        shape = features.shape
+        b, nchannels = shape[:2]
+        extra_shape = shape[2:]
+        assert nchannels == 288, "Expected 288 channels"
+        features = features.view(b, 3, 96, *extra_shape)
+        rgb = torch.sum(features, dim=2)
+        return rgb
+
     def calculate_loss(self, batch, stage):
         grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = batch
         reconstruction = self.model(grid)
@@ -346,8 +355,9 @@ class InterpolatableGridReconstruction(L.LightningModule):
         mask_colour_loss = self.loss_func(colour_grid[expanded_opacity_mask], colour_reconstruction[expanded_opacity_mask])
         self.log(stage + '_mask_colour_loss', mask_colour_loss)
 
-        rgb = self.RayManager.NoBasisMatRender(colour_grid.view(grid.shape[0], -1, 288)).view(*colour_grid.shape[:-1], 3)
-        reconstructed_rgb = self.RayManager.NoBasisMatRender(colour_reconstruction.view(grid.shape[0], -1, 288)).view(*colour_reconstruction.shape[:-1], 3)
+        rgb = self.RayManager.NoBasisMatRender(colour_grid)
+        reconstructed_rgb = self.NoBasisMatRender(colour_reconstruction)
+        expanded_opacity_mask = opacity_mask.unsqueeze(1).expand(-1, 3, -1, -1, -1)
         mask_rgb_loss = self.loss_func(rgb[expanded_opacity_mask], reconstructed_rgb[expanded_opacity_mask])
         self.log(stage + '_mask_rgb_loss', mask_rgb_loss)
 

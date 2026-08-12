@@ -12,9 +12,9 @@ import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='InterpolatableGridReconstruction training')
-    parser.add_argument('--small_bottleneck', action='store_true', help='Use small bottleneck architecture')
     parser.add_argument('--lr', type=float, default=1e-3, help='Initial learning rate')
     parser.add_argument('--scale', type=int, default=1, help='Scale of the latent size')
+    parser.add_argument('--downsamples', type=int, default=3, help='The number of times to half the size')
     parser.add_argument('--loss_method', type=str, default="WO", help='Loss method')
     parser.add_argument("--low_acc", action='store_true', help="Use a lower floating point precision for testing")
     parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
@@ -42,92 +42,91 @@ class DebugBlock(nn.Module):
         print(self.debug_string, x.shape)
         return x
 
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+        super().__init__()
+        self.block = nn.Sequential(nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding=padding),
+                                   nn.BatchNorm3d(out_channels),
+                                   nn.ReLU())
+    def forward(self, x):
+        return self.block(x)
+
+class DownBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.block = nn.Sequential(nn.MaxPool3d(2),
+                                   ConvBlock(in_channels, out_channels, 3, 1, 1))
+
+    def forward(self, x):
+        return self.block(x)
+
+class UpBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.block = nn.Sequential(nn.ConvTranspose3d(in_channels, in_channels, kernel_size=4, stride=2, padding=1),
+                                   # 24 -> 48
+                                   nn.BatchNorm3d(in_channels),
+                                   nn.ReLU(),
+                                   nn.Conv3d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
+                                   nn.BatchNorm3d(out_channels),
+                                   nn.ReLU(),
+                                   nn.Conv3d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
+                                   nn.BatchNorm3d(out_channels),
+                                   nn.ReLU())
+    def forward(self, x):
+        return self.block(x)
+
+
+
 class InterpolatableGridReconstructionNetwork(nn.Module):
-    def __init__(self, small_bottleneck=False, scale=1):
+    def __init__(self, scale=1, downsamples = 3):
         super().__init__()
 
+        encoder_blocks = [
+            [
+                ConvBlock(96 + 288, 32 * scale, kernel_size=1, stride=1, padding=0),  # 96 -> 96
+                ConvBlock(32 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
+                ConvBlock(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
+            ],
+            DownBlock(64 * scale, 128 * scale),  # 96 -> 48
+            DownBlock(128 * scale, 128 * scale),  # 46 -> 24
+            [
+                DownBlock(128 * scale, 128 * scale),  # 24 -> 12
+                ConvBlock(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
+            ],
+
+            #The following downsample is not done by default
+            [
+                DownBlock(128 * scale, 128 * scale), # 12 -> 6
+                ConvBlock(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
+            ]
+
+        ][:(downsamples + 1)]
+
+
         self.first_encoder = nn.Sequential(
-            nn.Conv3d(96 + 288, 32*scale, kernel_size=1, stride=1, padding=0),  # 96 -> 96
-            nn.BatchNorm3d(32*scale),
-            nn.ReLU(),
-            nn.Conv3d(32 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(64 * scale),
-            nn.ReLU(),
-            nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(64 * scale),
-            nn.ReLU(),
-            nn.MaxPool3d(2),  # 96 -> 48
-            nn.Conv3d(64 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(128 * scale),
-            nn.ReLU(),
-            nn.MaxPool3d(2),  # 48 -> 24
-            nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(128 * scale),
-            nn.ReLU(),
-            nn.MaxPool3d(2),  # 24 -> 12
-            nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(128 * scale),
-            nn.ReLU(),
-            nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(128 * scale),
-            nn.ReLU(),
+            *[x for scale in encoder_blocks for x in (scale if type(scale) == list else [scale])]
         )
 
+        decoder_blocks = [
+            # The following downsample is not done by default
+            UpBlock(128 * scale, 128 * scale),  # 6 -> 12
+
+
+            # This bit is done by default.
+            UpBlock(128 * scale, 128 * scale), # 12 -> 24
+            UpBlock(128 * scale, 64 * scale), # 24 -> 48
+            UpBlock(128 * scale, 64 * scale), # 48 -> 96
+            [
+                ConvBlock(64 * scale, 32 * scale, kernel_size=3, stride=1, padding=1),
+                nn.Conv3d(32 * scale, 96 + 288, kernel_size=3, stride=1, padding=1)
+            ]
+
+        ][(-downsamples - 1):]
+
         self.last_decoder = nn.Sequential(
-            nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 12 -> 24
-            nn.BatchNorm3d(128 * scale),
-            nn.ReLU(),
-            nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(128 * scale),
-            nn.ReLU(),
-            nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(128 * scale),
-            nn.ReLU(),
-            nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 24 -> 48
-            nn.BatchNorm3d(128 * scale),
-            nn.ReLU(),
-            nn.Conv3d(128 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(64 * scale),
-            nn.ReLU(),
-            nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(64 * scale),
-            nn.ReLU(),
-            nn.ConvTranspose3d(64 * scale, 64 * scale, kernel_size=4, stride=2, padding=1),  # 48 -> 96
-            nn.BatchNorm3d(64 * scale),
-            nn.ReLU(),
-            nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(64 * scale),
-            nn.ReLU(),
-            nn.Conv3d(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(64 * scale),
-            nn.ReLU(),
-            nn.Conv3d(64 * scale, 32 * scale, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(32 * scale),
-            nn.ReLU(),
-            nn.Conv3d(32 * scale, 96+288, kernel_size=3, stride=1, padding=1),)
-
-
-        if small_bottleneck:
-            self.extra_encoder = nn.Sequential(
-                nn.MaxPool3d(2),  # 12 -> 6
-                nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm3d(128 * scale),
-                nn.ReLU(),
-                nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm3d(128 * scale),
-                nn.ReLU())
-
-            self.extra_decoder = nn.Sequential(
-                nn.ConvTranspose3d(128 * scale, 128 * scale, kernel_size=4, stride=2, padding=1),  # 6 -> 12
-                nn.BatchNorm3d(128 * scale),
-                nn.ReLU(),
-                nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm3d(128 * scale),
-                nn.ReLU(),
-                nn.Conv3d(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm3d(128 * scale),
-                nn.ReLU(),
-            )
+            *[x for scale in decoder_blocks for x in (scale if type(scale) == list else [scale])]
+        )
 
         self.sigmoid = nn.Sigmoid()
 
@@ -281,11 +280,11 @@ class RayManager:
         return rgb_map
 
 class InterpolatableGridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, loss_method, small_bottleneck=False, scale=1, learning_rate=5e-4):
+    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4):
         super().__init__()
-        self.model = InterpolatableGridReconstructionNetwork(small_bottleneck, scale=scale)
+        self.model = InterpolatableGridReconstructionNetwork(scale=scale, downsamples=downsamples)
         self.lr = learning_rate
-        self.small_bottleneck = small_bottleneck
+        self.downsamples = downsamples
         self.scale = scale
         self.save_hyperparameters()
         self.loss_func = nn.L1Loss()
@@ -438,8 +437,8 @@ if __name__ == "__main__":
     run_name = f"loss={args.loss_method}_scale={args.scale}"
 
 
-    if args.small_bottleneck:
-        run_name += "_small_bottleneck"
+    if args.downsamples != 3:
+        run_name += f"_downsamples={args.downsamples}"
     if args.lr != 1e-3:
         run_name += f"_lr={args.lr}"
     if args.overfit:
@@ -448,7 +447,7 @@ if __name__ == "__main__":
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='OverfitInterpolatableGridReconstruction' if args.overfit else 'InterpolatableGridReconstruction')
     ckpt_dir = f"GridReconstructionCheckpoints/{run_name}/"
 
-    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, small_bottleneck=args.small_bottleneck, learning_rate=args.lr, scale=args.scale)
+    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)

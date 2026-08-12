@@ -294,7 +294,7 @@ class RayManager:
         return rgb_map
 
 class InterpolatableGridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False):
+    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2):
         super().__init__()
         self.model = InterpolatableGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
         self.no_batch_norm = no_batch_norm
@@ -307,6 +307,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
         self.dice_loss_score = DiceScore(num_classes=2, include_background=False, input_format='index')
         self.ckpt_dir = ckpt_dir
         self.RayManager = RayManager()
+        self.save_every_n_checkpoints = save_every_n_checkpoints
 
     def get_dice_score(self, representation_opacity, reconstruction_opacity):
         representation_opacity = (representation_opacity > 0.5).float()
@@ -428,7 +429,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         self.calculate_loss(batch, stage='val')
-        if self.current_epoch % 2 == 0:
+        if self.current_epoch % self.save_every_n_checkpoints == 0:
             self.trainer.save_checkpoint(os.path.join(self.ckpt_dir, f"epoch_{self.current_epoch}.ckpt"))
 
     def configure_optimizers(self):
@@ -463,12 +464,13 @@ if __name__ == "__main__":
 
 
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='OverfitInterpolatableGridReconstruction' if args.overfit else 'InterpolatableGridReconstruction')
-    ckpt_dir = f"GridReconstructionCheckpoints/{run_name}/"
+    ckpt_dir = f"InterpolatableGridReconstructionCheckpoints/{run_name}/"
 
-    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm)
+    save_every_n_checkpoints = 50 if args.overfit else 2
+    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints)
 
     os.makedirs(ckpt_dir, exist_ok=True)
-    checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir)
+    checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )
     epochs = 3000 if args.overfit else 200
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')

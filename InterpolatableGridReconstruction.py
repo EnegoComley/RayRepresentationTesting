@@ -355,7 +355,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
         mask_colour_loss = self.loss_func(colour_grid[expanded_opacity_mask], colour_reconstruction[expanded_opacity_mask])
         self.log(stage + '_mask_colour_loss', mask_colour_loss)
 
-        rgb = self.RayManager.NoBasisMatRender(colour_grid)
+        rgb = self.NoBasisMatRender(colour_grid)
         reconstructed_rgb = self.NoBasisMatRender(colour_reconstruction)
         expanded_opacity_mask = opacity_mask.unsqueeze(1).expand(-1, 3, -1, -1, -1)
         mask_rgb_loss = self.loss_func(rgb[expanded_opacity_mask], reconstructed_rgb[expanded_opacity_mask])

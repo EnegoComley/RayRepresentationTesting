@@ -92,13 +92,13 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
         self.pieces_to_puzzles = {piece: puzzle for puzzle, pieces in self.puzzle_to_pieces.items() for piece in pieces}
 
         if overfit:
-            self.puzzle_test_split = self.puzzle_test_split[:10]
-            self.puzzle_train_split = self.puzzle_train_split[:10]
-            self.puzzle_val_split = self.puzzle_val_split[:10]
+            self.puzzle_test_split = self.puzzle_test_split[:1]
+            self.puzzle_train_split = self.puzzle_train_split[:1]
+            self.puzzle_val_split = self.puzzle_val_split[:1]
 
-            self.test_pieces = self.test_pieces[:10]
-            self.train_pieces = self.train_pieces[:10]
-            self.val_pieces = self.val_pieces[:10]
+            self.test_pieces = ['RPf_00347.npz']
+            self.train_pieces = ['RPf_00347.npz']
+            self.val_pieces = ['RPf_00347.npz']
 
         self.test_split_dict = {"puzzles": self.puzzle_test_split, "pieces": self.test_pieces}
         self.train_split_dict = {"puzzles": self.puzzle_train_split, "pieces": self.train_pieces}

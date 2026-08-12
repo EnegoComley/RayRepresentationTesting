@@ -18,6 +18,8 @@ if __name__ == "__main__":
     parser.add_argument('--loss_method', type=str, default="WO", help='Loss method')
     parser.add_argument("--low_acc", action='store_true', help="Use a lower floating point precision for testing")
     parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
+    parser.add_argument('--overfit', action='store_true', help='Overfit the model on a small subset of the data for debugging')
+
 
 
 
@@ -285,9 +287,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
         self.lr = learning_rate
         self.small_bottleneck = small_bottleneck
         self.scale = scale
-        self.mse_loss = nn.MSELoss()
         self.save_hyperparameters()
-        self.loss_func = lambda a, b : self.mse_loss(a, b) ** 0.5
+        self.loss_func = nn.L1Loss()
         self.loss_method = loss_method
         self.dice_loss_score = DiceScore(num_classes=2, include_background=False, input_format='index')
         self.ckpt_dir = ckpt_dir
@@ -321,19 +322,18 @@ class InterpolatableGridReconstruction(L.LightningModule):
         rgbs = self.RayManager.get_colour(rgb_xyz_sampled, colour_reconstruction, rgb_weight, False)
         del edge_xyz_sampled, edge_ray_valid, edge_z_vals, rgb_xyz_sampled, rgb_weight, rgb_z_vals , rgb_ray_valid
 
-        mse_loss = self.mse_loss(grid, reconstruction)
+        l1_loss = self.loss_method(grid, reconstruction)
 
-        self.log(stage + '_mse_loss', mse_loss)
-
-        rmse_loss = mse_loss ** 0.5
-        self.log(stage + '_rmse_loss', rmse_loss)
+        self.log(stage + '_l1_loss', l1_loss)
 
         density_grid = grid[:, :96]
         colour_grid = grid[:, 96:]
 
 
         opacity_grid = self.density_to_opacity(density_grid, opacity_multiplier)
-        opacity_mask = (opacity_grid.unsqueeze(1) > 0.3).expand(-1, 288, -1, -1, -1)
+        opacity_mask = (opacity_grid > 0.3)
+        expanded_opacity_mask = opacity_mask.unsqueeze(1).expand(-1, 288, -1, -1, -1)
+
 
         reconstructed_opacity_grid = self.density_to_opacity(density_reconstruction, opacity_multiplier)
 
@@ -343,11 +343,19 @@ class InterpolatableGridReconstruction(L.LightningModule):
         opacity_loss = self.loss_func(opacity_grid, reconstructed_opacity_grid)
         self.log(stage + '_opacity_loss', opacity_loss)
 
-        mask_colour_loss = self.loss_func(colour_grid[opacity_mask], colour_reconstruction[opacity_mask])
+        mask_colour_loss = self.loss_func(colour_grid[expanded_opacity_mask], colour_reconstruction[expanded_opacity_mask])
         self.log(stage + '_mask_colour_loss', mask_colour_loss)
 
+        rgb = self.RayManager.NoBasisMatRender(colour_grid)
+        reconstructed_rgb = self.RayManager.NoBasisMatRender(colour_reconstruction)
+        mask_rgb_loss = self.loss_func(rgb[expanded_opacity_mask], reconstructed_rgb[expanded_opacity_mask])
+        self.log(stage + '_mask_rgb_loss', mask_rgb_loss)
+
+        focused_opacity_loss = (self.loss_func(opacity_grid[opacity_mask], reconstructed_opacity_grid[opacity_mask]) + self.loss_func(opacity_grid[~opacity_mask], reconstructed_opacity_grid[~opacity_mask])) * 0.5
+        self.log(stage + '_focused_opacity_loss', focused_opacity_loss)
+
         dice_loss = self.get_dice_score(opacity_grid, reconstructed_opacity_grid)
-        del opacity_grid, reconstructed_opacity_grid, density_grid, colour_grid, density_reconstruction, colour_reconstruction, opacity_mask
+        del opacity_grid, reconstructed_opacity_grid, density_grid, colour_grid, density_reconstruction, colour_reconstruction, opacity_mask, rgb, reconstructed_rgb
 
         self.log(stage + '_dice_loss', dice_loss)
         dice_loss = (1 - dice_loss)
@@ -362,8 +370,10 @@ class InterpolatableGridReconstruction(L.LightningModule):
             final_loss = opacity_loss + mask_colour_loss
         elif self.loss_method == "WD":
             final_loss = density_loss + mask_colour_loss
-        elif self.loss_method == "RMSE":
-            final_loss = rmse_loss
+        elif self.loss_method == "SWO":
+            final_loss = focused_opacity_loss + mask_rgb_loss
+        elif self.loss_method == "L1":
+            final_loss = l1_loss
         elif self.loss_method == "Dice":
             final_loss = dice_loss
         elif self.loss_method == "WO+Dice":
@@ -374,12 +384,14 @@ class InterpolatableGridReconstruction(L.LightningModule):
             final_loss = edge_loss + ray_colour_loss
         elif self.loss_method == "WO+Ray":
             final_loss = edge_loss + ray_colour_loss + opacity_loss + mask_colour_loss
+        elif self.loss_method == "SWO+Ray":
+            final_loss = edge_loss + ray_colour_loss + focused_opacity_loss + mask_rgb_loss
         elif self.loss_method == "WO+Dice+Ray":
             final_loss = edge_loss + ray_colour_loss + opacity_loss + mask_colour_loss + dice_loss
         else:
-            final_loss = rmse_loss
+            raise ValueError(f"Unknown loss method: {self.loss_method}")
 
-        del opacity_loss, dice_loss, mask_colour_loss, density_loss, rmse_loss, mse_loss
+        del opacity_loss, dice_loss, mask_colour_loss, density_loss, l1_loss
         self.log(stage + '_final_loss', final_loss)
 
         return final_loss
@@ -411,7 +423,7 @@ if __name__ == "__main__":
     batch_size_dict = {"BS" : 1, "acc" : 1} if args.no_logger else {1 : {"BS" : 3, "acc" : 10}, 2 : {"BS" : 2, "acc" : 15}, 3 : {"BS" : 1, "acc" : 30}}[args.scale]
 
     dataset_loader = RepairDatasetLoader(batch_size=batch_size_dict["BS"], dataset_type="InterpolatableGridDataset",
-                                         representation_folder_name="interpolatableGrids", num_workers=3, data_dir=datasets_path)
+                                         representation_folder_name="interpolatableGrids", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
     run_name = f"loss={args.loss_method}_scale={args.scale}"
 
@@ -420,6 +432,8 @@ if __name__ == "__main__":
         run_name += "_small_bottleneck"
     if args.lr != 1e-3:
         run_name += f"_lr={args.lr}"
+    if args.overfit:
+        run_name = "overfit_" + run_name
 
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='InterpolatableGridReconstruction')
     ckpt_dir = f"GridReconstructionCheckpoints/{run_name}/"

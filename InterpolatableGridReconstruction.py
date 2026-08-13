@@ -117,7 +117,7 @@ class InterpolatableGridReconstructionNetwork(nn.Module):
         ][:(downsamples + 1)]
 
 
-        self.first_encoder = nn.Sequential(
+        self.encoder = nn.Sequential(
             *[x for scale in encoder_blocks for x in (scale if type(scale) == list else [scale])]
         )
 
@@ -137,33 +137,15 @@ class InterpolatableGridReconstructionNetwork(nn.Module):
 
         ][(-downsamples - 1):]
 
-        self.last_decoder = nn.Sequential(
+        self.decoder = nn.Sequential(
             # Flatten the blocks
             *[x for scale in decoder_blocks for x in (scale if type(scale) == list else [scale])]
         )
 
-        self.sigmoid = nn.Sigmoid()
-
-
-    def encoder(self, x):
-        x = self.first_encoder(x)
-        if hasattr(self, 'extra_encoder'):
-            x = self.extra_encoder(x)
-        return x
-
-    def decoder(self, x):
-        if hasattr(self, 'extra_decoder'):
-            x = self.extra_decoder(x)
-        x = self.last_decoder(x)
-        return x
 
     def forward(self, representation):
         x = self.encoder(representation)
         x = self.decoder(x)
-        opacity = x[:, -1:]
-        colour = x[:, :-1]
-        opacity = self.sigmoid(opacity)
-        x = torch.cat((colour, opacity), dim=1)
         #if torch.isnan(x).any():
         #    print("NaN values found in output!")
         #    print(colour.isnan().sum(), opacity.isnan().sum())

@@ -402,6 +402,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
             final_loss = density_loss
         elif self.loss_method == "Opacity":
             final_loss = opacity_loss
+        elif self.loss_method == "DO":
+            final_loss = density_loss + opacity_loss
         else:
             raise ValueError(f"Unknown loss method: {self.loss_method}")
 

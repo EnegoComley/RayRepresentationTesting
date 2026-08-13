@@ -374,9 +374,9 @@ class InterpolatableGridReconstruction(L.LightningModule):
         self.log(stage + '_ray_colour_loss', ray_colour_loss)
 
         if self.loss_method == "WO":
-            final_loss = opacity_loss + mask_colour_loss
+            final_loss = opacity_loss + mask_rgb_loss
         elif self.loss_method == "WD":
-            final_loss = density_loss + mask_colour_loss
+            final_loss = density_loss + mask_rgb_loss
         elif self.loss_method == "SWO":
             final_loss = focused_opacity_loss + mask_rgb_loss
         elif self.loss_method == "L1":
@@ -384,21 +384,21 @@ class InterpolatableGridReconstruction(L.LightningModule):
         elif self.loss_method == "Dice":
             final_loss = dice_loss
         elif self.loss_method == "WO+Dice":
-            final_loss = opacity_loss + mask_colour_loss + dice_loss
+            final_loss = opacity_loss + mask_rgb_loss + dice_loss
         elif self.loss_method == "Dice+Mask":
-            final_loss = dice_loss + mask_colour_loss
+            final_loss = dice_loss + mask_rgb_loss
         elif self.loss_method == "Ray":
             final_loss = edge_loss + ray_colour_loss
         elif self.loss_method == "WO+Ray":
-            final_loss = edge_loss + ray_colour_loss + opacity_loss + mask_colour_loss
+            final_loss = edge_loss + ray_colour_loss + opacity_loss + mask_rgb_loss
         elif self.loss_method == "SWO+Ray":
             final_loss = edge_loss + ray_colour_loss + focused_opacity_loss + mask_rgb_loss
         elif self.loss_method == "WO+Dice+Ray":
-            final_loss = edge_loss + ray_colour_loss + opacity_loss + mask_colour_loss + dice_loss
+            final_loss = edge_loss + ray_colour_loss + opacity_loss + mask_rgb_loss + dice_loss
         else:
             raise ValueError(f"Unknown loss method: {self.loss_method}")
 
-        del opacity_loss, dice_loss, mask_colour_loss, density_loss, l1_loss
+        del opacity_loss, dice_loss, mask_colour_loss, density_loss, l1_loss, mask_rgb_loss
         self.log(stage + '_final_loss', final_loss)
 
         return final_loss

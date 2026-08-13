@@ -153,24 +153,25 @@ class InterpolatableGridReconstructionNetwork(nn.Module):
 
 
 
-class RayManager:
-    def __init__(self, device = None):
+class RayManager(nn.Module):
+    def __init__(self, device = None, dtype=torch.float32):
+        super().__init__()
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") if device is None else device
 
-        self.aabb =  torch.tensor([[-1.7541, -1.7541, -1.7541],[ 1.7541,  1.7541,  1.7541]], device=device)
+        self.aabb =  torch.tensor([[-1.7541, -1.7541, -1.7541],[ 1.7541,  1.7541,  1.7541]], device=device, dtype=dtype)
         self.near_far = [0.01, 6.0]
         self.aabbSize = self.aabb[1] - self.aabb[0]
         self.aabbDiag = torch.sqrt(torch.sum(torch.square(self.aabbSize)))
-        self.gridSize = torch.tensor([96, 96, 96], device=device)
+        self.gridSize = torch.tensor([96, 96, 96], device=device, dtype=dtype)
         self.units= self.aabbSize / (self.gridSize-1)
         self.step_ratio = 0.5
         self.stepSize=torch.mean(self.units)* self.step_ratio
         self.nSamples = int((self.aabbDiag / self.stepSize).item()) + 1
         self.invaabbSize = 2.0/self.aabbSize
+        self.dtype = dtype
 
 
     def sample_ray(self, rays_o, rays_d, device = torch.device("cpu"), vecMode = [0, 1, 2]):
-
         near, far = self.near_far
         vec = torch.where(rays_d==0, torch.full_like(rays_d, 1e-6), rays_d)
         rate_a = (self.aabb[1] - rays_o) / vec
@@ -178,6 +179,8 @@ class RayManager:
         t_min = torch.minimum(rate_a, rate_b).amax(-1).clamp(min=near, max=far)
 
         rng = torch.arange(self.nSamples)[None].float()
+        if self.dtype == torch.float16:
+            rng = rng.half()
 
         step = self.stepSize * rng.to(rays_o.device)
         interpx = (t_min[...,None] + step)
@@ -276,7 +279,7 @@ class RayManager:
         return rgb_map
 
 class InterpolatableGridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2):
+    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, ray_manager_dtype=torch.float32):
         super().__init__()
         self.model = InterpolatableGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
         self.no_batch_norm = no_batch_norm
@@ -288,7 +291,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
         self.loss_method = loss_method
         self.dice_loss_score = DiceScore(num_classes=2, include_background=False, input_format='index')
         self.ckpt_dir = ckpt_dir
-        self.RayManager = RayManager()
+        self.RayManager = RayManager(dtype=ray_manager_dtype)
         self.save_every_n_checkpoints = save_every_n_checkpoints
 
     def get_dice_score(self, representation_opacity, reconstruction_opacity):
@@ -395,6 +398,10 @@ class InterpolatableGridReconstruction(L.LightningModule):
             final_loss = edge_loss + ray_colour_loss + focused_opacity_loss + mask_rgb_loss
         elif self.loss_method == "WO+Dice+Ray":
             final_loss = edge_loss + ray_colour_loss + opacity_loss + mask_rgb_loss + dice_loss
+        elif self.loss_method == "Density":
+            final_loss = density_loss
+        elif self.loss_method == "Opacity":
+            final_loss = opacity_loss
         else:
             raise ValueError(f"Unknown loss method: {self.loss_method}")
 
@@ -449,7 +456,8 @@ if __name__ == "__main__":
     ckpt_dir = f"InterpolatableGridReconstructionCheckpoints/{run_name}/"
 
     save_every_n_checkpoints = 50 if args.overfit else 2
-    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints)
+    ray_manager_dtype = torch.float16 if args.low_acc else torch.float32
+    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints, ray_manager_dtype=ray_manager_dtype)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )

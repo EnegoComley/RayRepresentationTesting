@@ -20,8 +20,7 @@ if __name__ == "__main__":
     parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
     parser.add_argument('--overfit', action='store_true', help='Overfit the model on a small subset of the data for debugging')
     parser.add_argument('--no_batch_norm', action='store_true', help="Don't use batch normalization")
-
-
+    parser.add_argument('--simple_model', action='store_true', help='Use a simpler model for testing')
 
 
 
@@ -279,9 +278,12 @@ class RayManager(nn.Module):
         return rgb_map
 
 class InterpolatableGridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, ray_manager_dtype=torch.float32):
+    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, ray_manager_dtype=torch.float32, simple_model=False):
         super().__init__()
-        self.model = InterpolatableGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
+        if simple_model:
+            self.model = nn.Conv3d(96 + 288, 96 + 288, kernel_size=3, stride=1, padding=0)
+        else:
+            self.model = InterpolatableGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
         self.no_batch_norm = no_batch_norm
         self.lr = learning_rate
         self.downsamples = downsamples
@@ -460,6 +462,8 @@ if __name__ == "__main__":
         run_name += f"_lr={args.lr}"
     if args.overfit:
         run_name = "overfit_" + run_name
+    if args.simple_model:
+        run_name = "simple_model_" + run_name
     if args.no_batch_norm:
         run_name += "_no_batch_norm"
 
@@ -469,7 +473,7 @@ if __name__ == "__main__":
 
     save_every_n_checkpoints = 50 if args.overfit else 2
     ray_manager_dtype = torch.float16 if args.low_acc else torch.float32
-    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints, ray_manager_dtype=ray_manager_dtype)
+    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints, ray_manager_dtype=ray_manager_dtype, simple_model=args.simple_model)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )

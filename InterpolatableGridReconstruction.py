@@ -412,6 +412,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
             final_loss = density_loss * 169.6882 + opacity_loss * 169.6882 + mask_rgb_loss
         elif self.loss_method == "DO+CRGB":
             final_loss = density_loss * 169.6882 + opacity_loss * 169.6882 + mask_colour_loss * 0.5 + mask_rgb_loss * 0.005
+        elif self.loss_method == "WDO+CRGB":
+            final_loss = 322.2357 * (density_loss + opacity_loss * (0.345/0.0478)) + mask_colour_loss * (0.345/0.0852) + mask_rgb_loss * (0.345/0.8089)
         else:
             raise ValueError(f"Unknown loss method: {self.loss_method}")
 

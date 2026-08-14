@@ -281,7 +281,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
     def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, ray_manager_dtype=torch.float32, simple_model=False):
         super().__init__()
         if simple_model:
-            self.model = nn.Conv3d(96 + 288, 96 + 288, kernel_size=3, stride=1, padding=0)
+            self.model = nn.Conv3d(96 + 288, 96 + 288, kernel_size=3, stride=1, padding=1)
         else:
             self.model = InterpolatableGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
         self.no_batch_norm = no_batch_norm

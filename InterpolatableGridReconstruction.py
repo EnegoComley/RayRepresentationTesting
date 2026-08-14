@@ -129,7 +129,7 @@ class InterpolatableGridReconstructionNetwork(nn.Module):
             # This bit is done by default.
             UpBlock(128 * scale, 128 * scale), # 12 -> 24
             UpBlock(128 * scale, 64 * scale), # 24 -> 48
-            UpBlock(128 * scale, 64 * scale), # 48 -> 96
+            UpBlock(64 * scale, 64 * scale), # 48 -> 96
             [
                 ConvBlock(64 * scale, 32 * scale, kernel_size=3, stride=1, padding=1),
                 nn.Conv3d(32 * scale, 96 + 288, kernel_size=3, stride=1, padding=1)

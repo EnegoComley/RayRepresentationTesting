@@ -22,6 +22,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_batch_norm', action='store_true', help="Don't use batch normalization")
     parser.add_argument('--simple_model', action='store_true', help='Use a simpler model for testing')
     parser.add_argument('--opacity_only', action='store_true', help='Train it to only work out the opacity')
+    parser.add_argument('--split_model', action='store_true', help='Use a split model for training')
 
 
 
@@ -49,9 +50,8 @@ class DebugBlock(nn.Module):
 
 
 class InterpolatableGridReconstructionNetwork(nn.Module):
-    def __init__(self, scale=1, downsamples = 3, no_batch_norm = False, opacity_only = False):
+    def __init__(self, scale=1, downsamples = 3, no_batch_norm = False, channel_size= 96 + 288):
         super().__init__()
-        self.opacity_only = opacity_only
 
         class ConvBlock(nn.Module):
             def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
@@ -98,7 +98,7 @@ class InterpolatableGridReconstructionNetwork(nn.Module):
 
         encoder_blocks = [
             [
-                ConvBlock(96 if opacity_only else 96 + 288, 32 * scale, kernel_size=1, stride=1, padding=0),  # 96 -> 96
+                ConvBlock(channel_size, 32 * scale, kernel_size=1, stride=1, padding=0),  # 96 -> 96
                 ConvBlock(32 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
                 ConvBlock(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
             ],
@@ -133,7 +133,7 @@ class InterpolatableGridReconstructionNetwork(nn.Module):
             UpBlock(64 * scale, 64 * scale), # 48 -> 96
             [
                 ConvBlock(64 * scale, 32 * scale, kernel_size=3, stride=1, padding=1),
-                nn.Conv3d(32 * scale, 96 if self.opacity_only else 96 + 288, kernel_size=3, stride=1, padding=1)
+                nn.Conv3d(32 * scale, channel_size, kernel_size=3, stride=1, padding=1)
             ]
 
         ][(-downsamples - 1):]
@@ -146,15 +146,36 @@ class InterpolatableGridReconstructionNetwork(nn.Module):
 
     def forward(self, representation):
 
-        x = self.encoder(representation[:, :96] if self.opacity_only else representation)
+        x = self.encoder(representation)
         x = self.decoder(x)
-        if self.opacity_only:
-            x = torch.cat([x, representation[:, 96:]], dim=1)
         #if torch.isnan(x).any():
         #    print("NaN values found in output!")
         #    print(colour.isnan().sum(), opacity.isnan().sum())
         return x
 
+
+class OpacityOnlyModel(nn.Module):
+    def __init__(self, scale=1, downsamples=3, no_batch_norm=False):
+        super().__init__()
+        self.model = InterpolatableGridReconstructionNetwork(scale, downsamples, no_batch_norm, channel_size= 96)
+
+    def forward(self, representation):
+        x = self.model(representation[:, :96])
+        x = torch.cat([x, representation[:, 96:]], dim=1)
+        return x
+
+class SplitModel(nn.Module):
+    def __init__(self, scale=1, downsamples=3, no_batch_norm=False):
+        super().__init__()
+        opacity_scale = scale // 2
+        colour_scale = scale - opacity_scale
+        self.opacity_model = InterpolatableGridReconstructionNetwork(opacity_scale, downsamples, no_batch_norm, channel_size=96)
+        self.colour_model = InterpolatableGridReconstructionNetwork(colour_scale, downsamples, no_batch_norm, channel_size=288)
+
+    def forward(self, representation):
+        opacity = self.opacity_model(representation[:, :96])
+        colour = self.colour_model(representation[:, 96:384])
+        return torch.cat([opacity, colour], dim=1)
 
 
 class RayManager(nn.Module):
@@ -283,17 +304,22 @@ class RayManager(nn.Module):
         return rgb_map
 
 class InterpolatableGridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, ray_manager_dtype=torch.float32, simple_model=False, opacity_only=False):
+    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, ray_manager_dtype=torch.float32, simple_model=False, opacity_only=False, split_model=False):
         super().__init__()
         if simple_model:
             self.model = nn.Conv3d(96 + 288, 96 + 288, kernel_size=3, stride=1, padding=1)
+        elif opacity_only:
+            self.model = OpacityOnlyModel(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
+        elif split_model:
+            self.model = SplitModel(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
         else:
-            self.model = InterpolatableGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm, opacity_only=opacity_only)
+            self.model = InterpolatableGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
         self.no_batch_norm = no_batch_norm
         self.lr = learning_rate
         self.downsamples = downsamples
         self.scale = scale
         self.opacity_only = opacity_only
+        self.split_model = split_model
         self.save_hyperparameters()
         self.loss_func = nn.L1Loss()
         self.loss_method = loss_method
@@ -472,6 +498,8 @@ if __name__ == "__main__":
         run_name = "overfit_" + run_name
     if args.simple_model:
         run_name = "simple_model_" + run_name
+    if args.split_model:
+        run_name = "split_model_" + run_name
     if args.opacity_only:
         run_name = "opacity_only_" + run_name
     if args.no_batch_norm:
@@ -483,7 +511,7 @@ if __name__ == "__main__":
 
     save_every_n_checkpoints = 50 if args.overfit else 2
     ray_manager_dtype = torch.float16 if args.low_acc else torch.float32
-    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints, ray_manager_dtype=ray_manager_dtype, simple_model=args.simple_model, opacity_only=args.opacity_only)
+    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints, ray_manager_dtype=ray_manager_dtype, simple_model=args.simple_model, opacity_only=args.opacity_only, split_model=args.split_model)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )

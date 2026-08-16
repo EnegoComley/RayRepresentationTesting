@@ -305,7 +305,7 @@ class RayManager(nn.Module):
         return rgb_map
 
 class InterpolatableGridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, ray_manager_dtype=torch.float32, simple_model=False, opacity_only=False, split_model=False):
+    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, ray_manager_dtype=torch.float32, simple_model=False, opacity_only=False, split_model=False, no_lr_reduce=False):
         super().__init__()
         if simple_model:
             self.model = nn.Conv3d(96 + 288, 96 + 288, kernel_size=3, stride=1, padding=1)
@@ -328,6 +328,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
         self.ckpt_dir = ckpt_dir
         self.RayManager = RayManager(dtype=ray_manager_dtype)
         self.save_every_n_checkpoints = save_every_n_checkpoints
+        self.no_lr_reduce = no_lr_reduce
 
     def get_dice_score(self, representation_opacity, reconstruction_opacity):
         representation_opacity = (representation_opacity > 0.5).float()
@@ -471,6 +472,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
+        if self.no_lr_reduce:
+            return {"optimizer": optimizer}
         return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_final_loss"}
 
 
@@ -514,7 +517,7 @@ if __name__ == "__main__":
 
     save_every_n_checkpoints = 50 if args.overfit else 2
     ray_manager_dtype = torch.float16 if args.low_acc else torch.float32
-    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints, ray_manager_dtype=ray_manager_dtype, simple_model=args.simple_model, opacity_only=args.opacity_only, split_model=args.split_model)
+    model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints, ray_manager_dtype=ray_manager_dtype, simple_model=args.simple_model, opacity_only=args.opacity_only, split_model=args.split_model, no_lr_reduce=args.no_lr_reduce)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )
@@ -522,5 +525,5 @@ if __name__ == "__main__":
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')
     accelerator = "gpu"
-    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback] if args.no_lr_reduce else [checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0)
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0)
     trainer.fit(model, datamodule=dataset_loader)

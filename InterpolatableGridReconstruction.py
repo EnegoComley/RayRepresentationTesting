@@ -23,6 +23,7 @@ if __name__ == "__main__":
     parser.add_argument('--simple_model', action='store_true', help='Use a simpler model for testing')
     parser.add_argument('--opacity_only', action='store_true', help='Train it to only work out the opacity')
     parser.add_argument('--split_model', action='store_true', help='Use a split model for training')
+    parser.add_argument('--no_lr_reduce', action='store_true', help='Don\'t reduce the learning rate on plateau')
 
 
 
@@ -504,6 +505,8 @@ if __name__ == "__main__":
         run_name = "opacity_only_" + run_name
     if args.no_batch_norm:
         run_name += "_no_batch_norm"
+    if args.no_lr_reduce:
+        run_name += "_no_lr_reduce"
 
 
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='OverfitInterpolatableGridReconstruction' if args.overfit else 'InterpolatableGridReconstruction')
@@ -519,5 +522,5 @@ if __name__ == "__main__":
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')
     accelerator = "gpu"
-    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0)
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, accumulate_grad_batches=batch_size_dict["acc"], callbacks=[checkpoint_callback] if args.no_lr_reduce else [checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0)
     trainer.fit(model, datamodule=dataset_loader)

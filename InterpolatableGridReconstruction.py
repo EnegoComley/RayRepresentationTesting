@@ -535,13 +535,13 @@ if __name__ == "__main__":
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='OverfitInterpolatableGridReconstruction' if args.overfit else 'InterpolatableGridReconstruction')
     ckpt_dir = f"InterpolatableGridReconstructionCheckpoints/{run_name}/"
 
-    save_every_n_checkpoints = 50 if args.overfit else 2
+    save_every_n_checkpoints = 75 if args.overfit else 2
     ray_manager_dtype = torch.float16 if args.low_acc else torch.float32
     model = InterpolatableGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm,  save_every_n_checkpoints=save_every_n_checkpoints, ray_manager_dtype=ray_manager_dtype, simple_model=args.simple_model, opacity_only=args.opacity_only, split_model=args.split_model, no_lr_reduce=args.no_lr_reduce)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )
-    epochs = 3000 if args.overfit else 200
+    epochs = 1000 if args.overfit else 200
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')
     accelerator = "gpu"

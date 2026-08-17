@@ -274,7 +274,7 @@ class RayManager(nn.Module):
         rgb = torch.sum(features, dim=-1)
         return rgb
 
-    def get_colour(self, xyz_sampled, colour_grid, weight, white_bg):
+    def get_colour(self, xyz_sampled, colour_grid, weight, white_bg, give_raw_rgb=False):
 
         B, _, _, _ = xyz_sampled.shape
 
@@ -302,6 +302,8 @@ class RayManager(nn.Module):
         if white_bg:
             rgb_map = rgb_map + (1. - acc_map[..., None])
 
+        if give_raw_rgb:
+            return rgb_map, rgb
         return rgb_map
 
 class InterpolatableGridReconstruction(L.LightningModule):
@@ -363,6 +365,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
 
         edge_opacity = torch.sum(self.RayManager.get_opacity_weight(edge_xyz_sampled, density_reconstruction, edge_ray_valid, edge_z_vals), dim=-1)
         rgb_weight = self.RayManager.get_opacity_weight(rgb_xyz_sampled, density_reconstruction, rgb_ray_valid, rgb_z_vals)
+        center_opacity = torch.sum(edge_opacity, dim=-1)
 
         rgbs = self.RayManager.get_colour(rgb_xyz_sampled, colour_reconstruction, rgb_weight, False)
         del edge_xyz_sampled, edge_ray_valid, edge_z_vals, rgb_xyz_sampled, rgb_weight, rgb_z_vals , rgb_ray_valid
@@ -409,6 +412,9 @@ class InterpolatableGridReconstruction(L.LightningModule):
         edge_loss = self.loss_func(edge_opacity, torch.zeros_like(edge_opacity))
         self.log(stage + '_edge_loss', edge_loss)
 
+        center_loss = self.loss_funct(center_opacity, torch.ones_like(center_opacity))
+        self.log(stage + '_center_loss', center_loss)
+
         ray_colour_loss = self.loss_func(rgbs, rgb_rays_c)
         self.log(stage + '_ray_colour_loss', ray_colour_loss)
 
@@ -452,8 +458,12 @@ class InterpolatableGridReconstruction(L.LightningModule):
             final_loss = 322.2357 * (density_loss + opacity_loss * (0.345/0.0478)) + mask_colour_loss * (0.345/0.0852) + mask_rgb_loss * (0.345/0.8089)
         elif self.loss_method == "DO+CRGB+Ray":
             final_loss = density_loss + opacity_loss + mask_colour_loss + mask_rgb_loss + ray_colour_loss + edge_loss
+        elif self.loss_method == "DO+CRGB+CRay":
+            final_loss = density_loss + opacity_loss + mask_colour_loss + mask_rgb_loss + ray_colour_loss + edge_loss + center_loss
         elif self.loss_method == "DO+CRGB+Ray+Dice":
             final_loss = density_loss + opacity_loss + mask_colour_loss + mask_rgb_loss + ray_colour_loss + edge_loss
+        elif self.loss_method == "DO+CRGB+CRay+Dice":
+            final_loss = density_loss + opacity_loss + mask_colour_loss + mask_rgb_loss + ray_colour_loss + edge_loss + center_loss + dice_loss
         else:
             raise ValueError(f"Unknown loss method: {self.loss_method}")
 

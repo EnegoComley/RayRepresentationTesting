@@ -418,8 +418,8 @@ class InterpolatableGridReconstruction(L.LightningModule):
         ray_colour_loss = self.loss_func(rgbs, rgb_rays_c)
         self.log(stage + '_ray_colour_loss', ray_colour_loss)
 
-        raw_ray_colour_loss = self.loss_func(raw_rgb, rgb_rays_c)
-        self.log(stage + '_raw_ray_colour_loss', raw_ray_colour_loss)
+        #raw_ray_colour_loss = self.loss_func(raw_rgb, rgb_rays_c)
+        #self.log(stage + '_raw_ray_colour_loss', raw_ray_colour_loss)
 
         if self.loss_method == "WO":
             final_loss = opacity_loss + mask_rgb_loss

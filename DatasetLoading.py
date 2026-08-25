@@ -243,7 +243,53 @@ class InterpolatableGridDataset(GridDataset):
         blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = self.load_coloured_rays(piece_name, rotation=None)
         return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c
 
+class RGBAGridDataset(InterpolatableGridDataset):
+    def __getitem__(self, idx):
+        piece_name = self.piece_names[idx]
+        grid, opacity_multiplier = self.load_grid_representation(piece_name, rotation=None)
+        return grid, opacity_multiplier
 
+    def load_grid_representation(self, path, rotation=None):
+        full_path = os.path.join(self.representation_data_dir, path)
+        data = np.load(full_path)
+        decomposed_density_tensor_numpy = data['decomposed_density_tensor']
+        decomposed_colour_tensor_numpy = data['decomposed_colour_tensor']
+        opacity_multiplier = data['opacity_multiplier']
+
+        decomposed_density_tensor = torch.from_numpy(decomposed_density_tensor_numpy).to(dtype=torch.float32)
+        decomposed_colour_tensor = torch.from_numpy(decomposed_colour_tensor_numpy).to(dtype=torch.float32)
+
+        grid = torch.cat((self.compose_grid(decomposed_density_tensor), self.compose_grid(decomposed_colour_tensor)), dim=0)
+        if rotation is not None:
+            grid = self.rotate_grid(grid, rotation)
+
+        return grid, opacity_multiplier
+
+    def compose_grid(self, decomposed_tensor):
+        axis, channels, dim = decomposed_tensor.shape
+        decomposed_tensor = decomposed_tensor.view(axis, 4, -1, dim)
+        return torch.einsum('cpx,cpy,cpz->cxyz', decomposed_tensor[0], decomposed_tensor[1], decomposed_tensor[2])
+
+    def load_grid_representation(self, path, rotation=None):
+        full_path = os.path.join(self.representation_data_dir, path)
+        data = np.load(full_path)
+        decomposed_density_tensor_numpy = data['decomposed_density_tensor']
+        decomposed_colour_tensor_numpy = data['decomposed_colour_tensor']
+        opacity_multiplier = data['opacity_multiplier']
+        alpha_mask = data['alpha_volume']
+
+
+        decomposed_density_tensor = torch.from_numpy(decomposed_density_tensor_numpy).to(dtype=torch.float32)
+        decomposed_colour_tensor = torch.from_numpy(decomposed_colour_tensor_numpy).to(dtype=torch.float32)
+        alpha_mask = torch.from_numpy(alpha_mask).to(dtype=torch.float32)
+
+
+        grid = self.compose_grid(torch.cat([decomposed_density_tensor, decomposed_colour_tensor], dim=1))
+        grid = grid * alpha_mask[0].expand_as(grid)
+        if rotation is not None:
+            grid = self.rotate_grid(grid, rotation)
+
+        return grid, opacity_multiplier
 
 class RawGridDataset(GridDataset):
     def load_raw_representation(self, path: str, device: Union[str, torch.device] = 'cpu') -> Tuple[

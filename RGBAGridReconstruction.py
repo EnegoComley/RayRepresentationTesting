@@ -409,7 +409,7 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
-    dataset_loader = RepairDatasetLoader(batch_size=4 if args.no_logger else 32, dataset_type="RGBAGridDataset",
+    dataset_loader = RepairDatasetLoader(batch_size=4 if args.no_logger else 16, dataset_type="RGBAGridDataset",
                                          representation_folder_name="RGBAGrids", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
     run_name = f"loss={args.loss_method}_scale={args.scale}"
@@ -442,5 +442,5 @@ if __name__ == "__main__":
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')
     accelerator = "gpu"
-    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0, accumulate_grad_batches=2)
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0, accumulate_grad_batches=4)
     trainer.fit(model, datamodule=dataset_loader)

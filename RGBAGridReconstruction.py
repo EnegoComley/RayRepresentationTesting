@@ -46,6 +46,133 @@ class DebugBlock(nn.Module):
 
 
 
+class RGBARayManager(nn.Module):
+    def __init__(self, device = None, dtype=torch.float32):
+        super().__init__()
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") if device is None else device
+
+        self.aabb =  torch.tensor([[-1.7541, -1.7541, -1.7541],[ 1.7541,  1.7541,  1.7541]], device=device, dtype=dtype)
+        self.near_far = [0.01, 6.0]
+        self.aabbSize = self.aabb[1] - self.aabb[0]
+        self.aabbDiag = torch.sqrt(torch.sum(torch.square(self.aabbSize)))
+        self.gridSize = torch.tensor([96, 96, 96], device=device, dtype=dtype)
+        self.units= self.aabbSize / (self.gridSize-1)
+        self.step_ratio = 0.5
+        self.stepSize=torch.mean(self.units)* self.step_ratio
+        self.nSamples = int((self.aabbDiag / self.stepSize).item()) + 1
+        self.invaabbSize = 2.0/self.aabbSize
+        self.dtype = dtype
+
+
+    def sample_ray(self, rays_o, rays_d, device = torch.device("cpu"), vecMode = [0, 1, 2]):
+        near, far = self.near_far
+        vec = torch.where(rays_d==0, torch.full_like(rays_d, 1e-6), rays_d)
+        rate_a = (self.aabb[1] - rays_o) / vec
+        rate_b = (self.aabb[0] - rays_o) / vec
+        t_min = torch.minimum(rate_a, rate_b).amax(-1).clamp(min=near, max=far)
+
+        rng = torch.arange(self.nSamples)[None].float()
+        if self.dtype == torch.float16:
+            rng = rng.half()
+
+        step = self.stepSize * rng.to(rays_o.device)
+        interpx = (t_min[...,None] + step)
+
+        rays_pts = rays_o[...,None,:] + rays_d[...,None,:] * interpx[...,None]
+        mask_outbbox = ((self.aabb[0]>rays_pts) | (rays_pts>self.aabb[1])).any(dim=-1)
+
+        xyz_sampled = rays_pts
+        z_vals = interpx
+        ray_valid = ~mask_outbbox
+        del rays_pts, interpx, mask_outbbox
+
+        # Normalise the coordinates for interpolation.
+        xyz_sampled = (xyz_sampled-self.aabb[0]) * self.invaabbSize - 1
+
+        # Change to the correct axis mode
+        xyz_sampled = xyz_sampled[:, :, :, vecMode]
+
+        return xyz_sampled, z_vals, ray_valid
+
+
+
+    def raw2weight(self, sigma, dist):
+        # Function taken from TensoRF
+        # sigma, dist  [N_rays, N_samples]
+        alpha = 1. - torch.exp(-sigma * dist)  # Percentage of colour absorbed at each point, [N_rays, N_samples]
+        # When sigma*dist is 0 (sigma is transparent) it is 1 - 1 = 0, when sigma*dist is large (sigma is opaque) it is 1 - 0 = 1. E^(-x) approaches 0
+
+        T = torch.cumprod(torch.cat([torch.ones(alpha.shape[0], alpha.shape[1], 1).to(alpha.device), 1. - alpha + 1e-10], -1), -1)
+        # T is the percentage of light at each point along the ray. It starts at 1 and get's successively multiplied by the previous amount of light taken.
+
+        weights = alpha * T[:, :, :-1]  # [N_rays, N_samples]
+        # The weight is then the amount of light absorbed at each point multiplied by the amount of light remaining.
+        return weights
+
+    def get_opacity_weight(self, xyz_sampled, density_grid, ray_valid, z_vals):
+        sigma = torch.zeros(xyz_sampled.shape[:-1], device=xyz_sampled.device)
+
+        B, _, _, _ = xyz_sampled.shape
+
+        # xyz_sampled: (N,3) in [-1,1]
+        grid = xyz_sampled[ray_valid].view(B, -1, 1, 1, 3)
+
+        sigma_feature = F.grid_sample(
+            density_grid,  # (B,C,D,H,W)
+            grid,
+            mode="bilinear",
+            align_corners=True,
+        )  # (B, C, NPoints, 1, 1)
+        sigma_feature = torch.sum(sigma_feature, dim=1).squeeze()
+
+        validsigma = F.softplus(sigma_feature - 10)
+        sigma[ray_valid] = validsigma
+
+        dists = torch.cat((z_vals[:, :, 1:] - z_vals[:, :, :-1], torch.zeros_like(z_vals[:, :, :1])), dim=-1)
+
+        weight = self.raw2weight(sigma, dists * 25)  # 25 is the normal distance scale in the tensoRF
+
+        return weight
+
+    def NoBasisMatRender(self, features):
+        b, nrays, nchannels = features.shape
+        assert nchannels == 288, "Expected 288 channels"
+        features = features.view(b, nrays, 3, -1)
+        rgb = torch.sum(features, dim=-1)
+        return rgb
+
+    def get_colour(self, xyz_sampled, colour_grid, weight, white_bg, give_raw_rgb=False):
+
+        B, _, _, _ = xyz_sampled.shape
+
+        rgb = torch.zeros((*xyz_sampled.shape[:3], 3), device=xyz_sampled.device)
+
+        app_mask = weight > 0.0001
+
+        if app_mask.any():
+            grid = xyz_sampled[app_mask].view(B, -1, 1, 1, 3)
+
+            app_features = F.grid_sample(
+                colour_grid,      # (B,C,D,H,W)
+                grid,
+                mode="bilinear",
+                align_corners=True,
+            ) # (B, C, NPoints, 1, 1)
+            app_features = app_features.view(B, colour_grid.shape[1], grid.shape[1]).permute(0, 2, 1)
+
+            valid_rgbs = self.NoBasisMatRender(app_features)
+            rgb[app_mask] = valid_rgbs
+
+        acc_map = torch.sum(weight, -1)
+        rgb_map = torch.sum(weight[..., None] * rgb, -2)
+
+        if white_bg:
+            rgb_map = rgb_map + (1. - acc_map[..., None])
+
+        if give_raw_rgb:
+            return rgb_map, rgb
+        return rgb_map
+
 class RGBAGridReconstructionNetwork(nn.Module):
     def __init__(self, scale=1, downsamples = 3, no_batch_norm = False, channel_size= 4):
         super().__init__()
@@ -282,7 +409,7 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
-    dataset_loader = RepairDatasetLoader(batch_size=4 if args.no_logger else 64, dataset_type="RGBAGridDataset",
+    dataset_loader = RepairDatasetLoader(batch_size=4 if args.no_logger else 32, dataset_type="RGBAGridDataset",
                                          representation_folder_name="RGBAGrids", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
     run_name = f"loss={args.loss_method}_scale={args.scale}"
@@ -315,5 +442,5 @@ if __name__ == "__main__":
     precision = "16-true" if args.low_acc else "32-true"
     lr_monitor = LearningRateMonitor(logging_interval='step')
     accelerator = "gpu"
-    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0)
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0, accumulate_grad_batches=2)
     trainer.fit(model, datamodule=dataset_loader)

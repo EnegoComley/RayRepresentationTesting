@@ -286,8 +286,8 @@ class SplitModel(nn.Module):
         self.colour_model = RGBAGridReconstructionNetwork(colour_scale, downsamples, no_batch_norm, channel_size=3)
 
     def forward(self, representation):
-        opacity = self.opacity_model(representation[:, :96])
-        colour = self.colour_model(representation[:, 96:384])
+        opacity = self.opacity_model(representation[:, :1])
+        colour = self.colour_model(representation[:, 1:])
         return torch.cat([opacity, colour], dim=1)
 
 class RGBAGridReconstruction(L.LightningModule):

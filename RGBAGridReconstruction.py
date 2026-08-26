@@ -375,6 +375,12 @@ class RGBAGridReconstruction(L.LightningModule):
             final_loss = opacity_loss + mask_colour_loss
         elif self.loss_method == "O+RGB+Dice":
             final_loss = opacity_loss + mask_colour_loss + dice_loss
+        elif self.loss_method == "DO+RGB":
+            final_loss = density_loss + opacity_loss + mask_colour_loss
+        elif self.loss_method == "DO+RGB+Dice":
+            final_loss = density_loss + opacity_loss + mask_colour_loss + dice_loss
+        elif self.loss_method == "D+RGB":
+            final_loss = density_loss + mask_colour_loss
 
         else:
             raise ValueError(f"Unknown loss method: {self.loss_method}")

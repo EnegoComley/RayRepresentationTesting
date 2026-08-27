@@ -460,6 +460,7 @@ class RGBAGridReconstruction(L.LightningModule):
                                               give_raw_rgb=True)
 
 
+        del edge_xyz_sampled, edge_ray_valid, edge_z_vals, edge_ray_valid, rgb_xyz_sampled, rgb_z_vals, rgb_weight, rgb_ray_valid
 
         density_loss = self.loss_func(density_grid, density_reconstruction)
         self.log(stage + '_density_loss', density_loss)

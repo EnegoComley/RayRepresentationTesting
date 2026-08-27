@@ -408,6 +408,7 @@ class RGBAGridReconstruction(L.LightningModule):
         self.ckpt_dir = ckpt_dir
         self.save_every_n_checkpoints = save_every_n_checkpoints
         self.no_lr_reduce = no_lr_reduce
+        self.RayManager = RGBARayManager()
 
     def get_dice_score(self, representation_opacity, reconstruction_opacity):
         representation_opacity = (representation_opacity > 0.5).float()

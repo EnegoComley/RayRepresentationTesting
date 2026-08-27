@@ -436,13 +436,6 @@ class RGBAGridReconstruction(L.LightningModule):
         density_grid = grid[:, :1]
         colour_grid = grid[:, 1:]
 
-        edge_xyz_sampled, edge_z_vals, edge_ray_valid = self.RayManager.sample_ray(blank_edge_rays_o, blank_edge_rays_d)
-        rgb_xyz_sampled, rgb_z_vals, rgb_ray_valid = self.RayManager.sample_ray(rgb_rays_o, rgb_rays_d)
-        density_reconstruction = reconstruction[:, :96]
-        colour_reconstruction = reconstruction[:, 96:]
-
-
-
         opacity_grid = self.density_to_opacity(density_grid, opacity_multiplier)
         opacity_mask = (opacity_grid > 0.3)
         expanded_opacity_mask = opacity_mask.expand(-1, 3, -1, -1, -1)
@@ -466,6 +459,8 @@ class RGBAGridReconstruction(L.LightningModule):
         dice_loss = (1 - dice_loss)
 
 
+        edge_xyz_sampled, edge_z_vals, edge_ray_valid = self.RayManager.sample_ray(blank_edge_rays_o, blank_edge_rays_d)
+        rgb_xyz_sampled, rgb_z_vals, rgb_ray_valid = self.RayManager.sample_ray(rgb_rays_o, rgb_rays_d)
 
         edge_opacity = torch.sum(
             self.RayManager.get_opacity_weight(edge_xyz_sampled, density_reconstruction, edge_ray_valid, edge_z_vals),

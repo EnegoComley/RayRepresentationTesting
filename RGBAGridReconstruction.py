@@ -443,6 +443,24 @@ class RGBAGridReconstruction(L.LightningModule):
 
         reconstructed_opacity_grid = self.density_to_opacity(density_reconstruction, opacity_multiplier)
 
+
+
+
+        edge_xyz_sampled, edge_z_vals, edge_ray_valid = self.RayManager.sample_ray(blank_edge_rays_o, blank_edge_rays_d)
+        rgb_xyz_sampled, rgb_z_vals, rgb_ray_valid = self.RayManager.sample_ray(rgb_rays_o, rgb_rays_d)
+
+        edge_opacity = torch.sum(
+            self.RayManager.get_opacity_weight(edge_xyz_sampled, density_reconstruction, edge_ray_valid, edge_z_vals),
+            dim=-1)
+        rgb_weight = self.RayManager.get_opacity_weight(rgb_xyz_sampled, density_reconstruction, rgb_ray_valid,
+                                                        rgb_z_vals)
+        center_opacity = torch.sum(rgb_weight, dim=-1)
+
+        ray_rgbs = self.RayManager.get_colour(rgb_xyz_sampled, colour_reconstruction, rgb_weight, False,
+                                              give_raw_rgb=True)
+
+
+
         density_loss = self.loss_func(density_grid, density_reconstruction)
         self.log(stage + '_density_loss', density_loss)
 
@@ -459,18 +477,7 @@ class RGBAGridReconstruction(L.LightningModule):
         dice_loss = (1 - dice_loss)
 
 
-        edge_xyz_sampled, edge_z_vals, edge_ray_valid = self.RayManager.sample_ray(blank_edge_rays_o, blank_edge_rays_d)
-        rgb_xyz_sampled, rgb_z_vals, rgb_ray_valid = self.RayManager.sample_ray(rgb_rays_o, rgb_rays_d)
 
-        edge_opacity = torch.sum(
-            self.RayManager.get_opacity_weight(edge_xyz_sampled, density_reconstruction, edge_ray_valid, edge_z_vals),
-            dim=-1)
-        rgb_weight = self.RayManager.get_opacity_weight(rgb_xyz_sampled, density_reconstruction, rgb_ray_valid,
-                                                        rgb_z_vals)
-        center_opacity = torch.sum(rgb_weight, dim=-1)
-
-        ray_rgbs = self.RayManager.get_colour(rgb_xyz_sampled, colour_reconstruction, rgb_weight, False,
-                                          give_raw_rgb=True)
 
 
         edge_ray_loss = self.loss_func(edge_opacity, torch.zeros_like(edge_opacity))

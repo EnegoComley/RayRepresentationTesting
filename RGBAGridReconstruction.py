@@ -91,7 +91,6 @@ class RGBARayManager(nn.Module):
 
         # Change to the correct axis mode
         xyz_sampled = xyz_sampled[:, :, :, vecMode]
-
         return xyz_sampled, z_vals, ray_valid
 
 
@@ -110,23 +109,69 @@ class RGBARayManager(nn.Module):
         return weights
 
     def get_opacity_weight(self, xyz_sampled, density_grid, ray_valid, z_vals):
-        sigma = torch.zeros(xyz_sampled.shape[:-1], device=xyz_sampled.device)
+        B = xyz_sampled.shape[0]
 
-        B, _, _, _ = xyz_sampled.shape
+        sigma = torch.zeros(
+            xyz_sampled.shape[:-1],
+            device=xyz_sampled.device,
+            dtype=density_grid.dtype,
+        )
 
-        # xyz_sampled: (N,3) in [-1,1]
-        grid = xyz_sampled[ray_valid].view(B, -1, 1, 1, 3)
+        xyz_flat = xyz_sampled.reshape(B, -1, 3)
+        valid_flat = ray_valid.reshape(B, -1)
 
-        sigma_feature = F.grid_sample(
-            density_grid,  # (B,C,D,H,W)
-            grid,
-            mode="bilinear",
-            align_corners=True,
-        )  # (B, C, NPoints, 1, 1)
-        sigma_feature = torch.sum(sigma_feature, dim=1).squeeze()
+        n_valid = valid_flat.sum(dim=1)
+        max_valid = int(n_valid.max())
 
-        validsigma = F.softplus(sigma_feature - 10)
-        sigma[ray_valid] = validsigma
+        if max_valid > 0:
+            # Positions of the valid entries within each batch
+            batch_idx, point_idx = torch.where(valid_flat)
+
+            # Position of each valid point within its batch's packed array
+            packed_idx = (
+                    torch.arange(batch_idx.numel(), device=xyz_sampled.device)
+                    - torch.cat([
+                torch.zeros(
+                    1,
+                    device=xyz_sampled.device,
+                    dtype=torch.long,
+                ),
+                n_valid.cumsum(0)[:-1],
+            ])[batch_idx]
+            )
+
+            # Pack into padded tensor
+            grid = torch.zeros(
+                B, max_valid, 3,
+                device=xyz_sampled.device,
+                dtype=xyz_sampled.dtype,
+            )
+
+            grid[batch_idx, packed_idx] = xyz_flat[batch_idx, point_idx]
+
+            sigma_feature = F.grid_sample(
+                density_grid,
+                grid[:, :, None, None, :],
+                mode="bilinear",
+                align_corners=True,
+            )
+
+            sigma_feature = (
+                sigma_feature
+                .squeeze(-1)
+                .squeeze(-1)
+            )
+
+            validsigma = F.softplus(sigma_feature - 10)
+
+            sigma_flat = sigma.reshape(B, -1)
+            for b in range(B):
+                mask = valid_flat[b]
+                n = n_valid[b]
+
+                if n > 0:
+                    sigma_flat[b, mask] = validsigma[b, :n]
+            sigma = sigma_flat.reshape(*xyz_sampled.shape[:-1])
 
         dists = torch.cat((z_vals[:, :, 1:] - z_vals[:, :, :-1], torch.zeros_like(z_vals[:, :, :1])), dim=-1)
 
@@ -134,34 +179,89 @@ class RGBARayManager(nn.Module):
 
         return weight
 
-    def NoBasisMatRender(self, features):
-        b, nrays, nchannels = features.shape
-        assert nchannels == 288, "Expected 288 channels"
-        features = features.view(b, nrays, 3, -1)
-        rgb = torch.sum(features, dim=-1)
-        return rgb
+    def get_colour(self, xyz_sampled, colour_grid, weight, white_bg):
 
-    def get_colour(self, xyz_sampled, colour_grid, weight, white_bg, give_raw_rgb=False):
+        B = xyz_sampled.shape[0]
 
-        B, _, _, _ = xyz_sampled.shape
-
-        rgb = torch.zeros((*xyz_sampled.shape[:3], 3), device=xyz_sampled.device)
+        rgb = torch.zeros(
+            (*xyz_sampled.shape[:3], 3),
+            device=xyz_sampled.device,
+            dtype=colour_grid.dtype,
+        )
 
         app_mask = weight > 0.0001
 
-        if app_mask.any():
-            grid = xyz_sampled[app_mask].view(B, -1, 1, 1, 3)
+        # Flatten all non-batch, non-coordinate dimensions
+        xyz_flat = xyz_sampled.reshape(B, -1, 3)
+        mask_flat = app_mask.reshape(B, -1)
 
-            app_features = F.grid_sample(
-                colour_grid,      # (B,C,D,H,W)
+        # Number of valid points for each batch element
+        n_valid = mask_flat.sum(dim=1)
+        max_valid = int(n_valid.max())
+
+        if max_valid > 0:
+            # Find all valid positions
+            batch_idx, point_idx = torch.where(mask_flat)
+
+            # Compute each point's position within its batch's packed array
+            offsets = torch.cat([
+                torch.zeros(
+                    1,
+                    device=xyz_sampled.device,
+                    dtype=torch.long,
+                ),
+                n_valid.cumsum(dim=0)[:-1],
+            ])
+
+            packed_idx = (
+                    torch.arange(
+                        batch_idx.numel(),
+                        device=xyz_sampled.device,
+                    )
+                    - offsets[batch_idx]
+            )
+
+            # Pack valid coordinates into a padded tensor
+            # (B, max_valid, 3)
+            grid = torch.zeros(
+                B,
+                max_valid,
+                3,
+                device=xyz_sampled.device,
+                dtype=xyz_sampled.dtype,
+            )
+
+            grid[batch_idx, packed_idx] = xyz_flat[batch_idx, point_idx]
+
+            # grid_sample expects:
+            # input: (B, C, D, H, W)
+            # grid:  (B, D_out, H_out, W_out, 3)
+            grid = grid[:, :, None, None, :]
+
+            valid_rgbs = F.grid_sample(
+                colour_grid,
                 grid,
                 mode="bilinear",
                 align_corners=True,
-            ) # (B, C, NPoints, 1, 1)
-            app_features = app_features.view(B, colour_grid.shape[1], grid.shape[1]).permute(0, 2, 1)
+            )
+            # (B, C, max_valid, 1, 1)
 
-            valid_rgbs = self.NoBasisMatRender(app_features)
-            rgb[app_mask] = valid_rgbs
+            valid_rgbs = (
+                valid_rgbs
+                .squeeze(-1)
+                .squeeze(-1)
+                .permute(0, 2, 1)
+            )
+            # (B, max_valid, C)
+
+            # Scatter sampled RGB values back to their original positions
+            rgb_flat = rgb.reshape(B, -1, 3)
+
+            rgb_flat[batch_idx, point_idx] = valid_rgbs[
+                batch_idx,
+                packed_idx,
+            ]
+            rgb = rgb_flat.reshape(*xyz_sampled.shape[:-1], 3)
 
         acc_map = torch.sum(weight, -1)
         rgb_map = torch.sum(weight[..., None] * rgb, -2)
@@ -169,8 +269,6 @@ class RGBARayManager(nn.Module):
         if white_bg:
             rgb_map = rgb_map + (1. - acc_map[..., None])
 
-        if give_raw_rgb:
-            return rgb_map, rgb
         return rgb_map
 
 class RGBAGridReconstructionNetwork(nn.Module):
@@ -324,7 +422,7 @@ class RGBAGridReconstruction(L.LightningModule):
         return 1. - torch.exp(-density_grid * torch.mean(opacity_multiplier))
 
     def calculate_loss(self, batch, stage):
-        grid, opacity_multiplier = batch
+        grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = batch
         reconstruction = self.model(grid)
 
         density_reconstruction = reconstruction[:, :1]
@@ -336,6 +434,12 @@ class RGBAGridReconstruction(L.LightningModule):
 
         density_grid = grid[:, :1]
         colour_grid = grid[:, 1:]
+
+        edge_xyz_sampled, edge_z_vals, edge_ray_valid = self.RayManager.sample_ray(blank_edge_rays_o, blank_edge_rays_d)
+        rgb_xyz_sampled, rgb_z_vals, rgb_ray_valid = self.RayManager.sample_ray(rgb_rays_o, rgb_rays_d)
+        density_reconstruction = reconstruction[:, :96]
+        colour_reconstruction = reconstruction[:, 96:]
+
 
 
         opacity_grid = self.density_to_opacity(density_grid, opacity_multiplier)
@@ -361,6 +465,27 @@ class RGBAGridReconstruction(L.LightningModule):
         dice_loss = (1 - dice_loss)
 
 
+
+        edge_opacity = torch.sum(
+            self.RayManager.get_opacity_weight(edge_xyz_sampled, density_reconstruction, edge_ray_valid, edge_z_vals),
+            dim=-1)
+        rgb_weight = self.RayManager.get_opacity_weight(rgb_xyz_sampled, density_reconstruction, rgb_ray_valid,
+                                                        rgb_z_vals)
+        center_opacity = torch.sum(rgb_weight, dim=-1)
+
+        ray_rgbs = self.RayManager.get_colour(rgb_xyz_sampled, colour_reconstruction, rgb_weight, False,
+                                          give_raw_rgb=True)
+
+
+        edge_ray_loss = self.loss_func(edge_opacity, torch.zeros_like(edge_opacity))
+        self.log(stage + '_edge_ray_loss', edge_ray_loss)
+
+        center_ray_loss = self.loss_func(center_opacity, torch.ones_like(center_opacity))
+        self.log(stage + '_center_ray_loss', center_ray_loss)
+
+        center_ray_rgb_loss = self.loss_func(ray_rgbs, rgb_rays_c)
+        self.log(stage + '_center_ray_rgb_loss', center_ray_rgb_loss)
+
         if self.loss_method == "L1":
             final_loss = l1_loss
         elif self.loss_method == "Dice":
@@ -381,6 +506,10 @@ class RGBAGridReconstruction(L.LightningModule):
             final_loss = density_loss + opacity_loss + mask_colour_loss + dice_loss
         elif self.loss_method == "D+RGB":
             final_loss = density_loss + mask_colour_loss
+        elif self.loss_method == "DO+RGB+Ray":
+            final_loss = density_loss + opacity_loss + mask_colour_loss
+        elif self.loss_method == "DO+RGB+Ray+Dice":
+            final_loss = density_loss + opacity_loss + mask_colour_loss + dice_loss
 
         else:
             raise ValueError(f"Unknown loss method: {self.loss_method}")

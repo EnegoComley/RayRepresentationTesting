@@ -355,7 +355,7 @@ class InterpolatableGridReconstruction(L.LightningModule):
         return rgb
 
     def calculate_loss(self, batch, stage):
-        grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = batch
+        grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_name = batch
         reconstruction = self.model(grid)
 
         edge_xyz_sampled, edge_z_vals, edge_ray_valid = self.RayManager.sample_ray(blank_edge_rays_o, blank_edge_rays_d)

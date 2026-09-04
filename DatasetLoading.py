@@ -241,14 +241,14 @@ class InterpolatableGridDataset(GridDataset):
         piece_name = self.piece_names[idx]
         grid, opacity_multiplier = self.load_grid_representation(piece_name, rotation=None)
         blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = self.load_coloured_rays(piece_name, rotation=None)
-        return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c
+        return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_name
 
 class RGBAGridDataset(InterpolatableGridDataset):
     def __getitem__(self, idx):
         piece_name = self.piece_names[idx]
         grid, opacity_multiplier = self.load_grid_representation(piece_name, rotation=None)
         blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = self.load_coloured_rays(piece_name, rotation=None)
-        return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c
+        return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_name
 
     def load_grid_representation(self, path, rotation=None):
         full_path = os.path.join(self.representation_data_dir, path)

@@ -7,6 +7,9 @@ import torch.nn as nn
 from torchmetrics.segmentation import DiceScore
 from pytorch_lightning.callbacks import LearningRateMonitor
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+from torchvision.utils import save_image
+
 
 import argparse
 
@@ -33,6 +36,8 @@ import torch
 from lightning.pytorch.loggers import WandbLogger
 import os
 
+import json
+
 torch.set_float32_matmul_precision('medium')
 
 class DebugBlock(nn.Module):
@@ -46,7 +51,86 @@ class DebugBlock(nn.Module):
 
 
 
-class RGBARayManager(nn.Module):
+
+def show_tensor_image(image, title=None, figsize=(10, 10), normalize=False):
+    """
+    Display a PyTorch image tensor using matplotlib.
+
+    Args:
+        image (torch.Tensor): Image tensor of shape (C, H, W), (H, W), or (1, H, W).
+        title (str, optional): Title for the plot.
+        figsize (tuple): Figure size.
+        normalize (bool): If True, assumes values are in [-1, 1] and rescales to [0, 1].
+    """
+    if not isinstance(image, torch.Tensor):
+        raise TypeError("Input must be a torch.Tensor")
+
+    # Move to CPU, detach from computation graph
+    image = image.detach().cpu()
+
+    # Rescale if normalized to [-1, 1]
+    if normalize:
+        image = (image + 1) / 2
+
+    # Clamp values to valid range
+    image = image.clamp(0, 1)
+
+    # Handle different tensor shapes
+    if image.ndim == 3:
+        # (C, H, W) -> (H, W, C)
+        image = image.permute(1, 2, 0)
+
+        # If grayscale with one channel, remove the channel dimension
+        if image.shape[2] == 1:
+            image = image.squeeze(2)
+            cmap = "gray"
+        else:
+            cmap = None
+
+    elif image.ndim == 2:
+        cmap = "gray"
+
+    else:
+        raise ValueError(f"Unsupported image shape: {image.shape}")
+
+    plt.figure(figsize=figsize)
+    plt.imshow(image, cmap=cmap)
+    plt.axis("off")
+
+
+    if title:
+        plt.title(title)
+
+
+
+
+def visualise_grid(density_grid, colour_grid, save_names, chunk=10000, device = torch.device("cuda")):
+    batch_size = density_grid.shape[0]
+
+    ray_manager = RayManager(device=device)
+
+
+    sample_pose = np.load(f"SamplePoses/SamplePose5.npz")
+    pose_rays_o = torch.tensor(sample_pose["rays_o"])
+    pose_rays_d = torch.tensor(sample_pose["rays_d"])
+
+    all_rgbs = []
+    N_rays_all = pose_rays_o.shape[0]
+    for chunk_idx in range(N_rays_all // chunk + int(N_rays_all % chunk > 0)):
+        rays_o = pose_rays_o[chunk_idx * chunk:(chunk_idx + 1) * chunk].to(device)
+        rays_d = pose_rays_d[chunk_idx * chunk:(chunk_idx + 1) * chunk].to(device)
+        xyz_sampled, z_vals, ray_valid = ray_manager.sample_ray(rays_o.unsqueeze(0).expand(batch_size, -1, -1), rays_d.unsqueeze(0).expand(batch_size, -1, -1), device=device)
+        weight = ray_manager.get_opacity_weight(xyz_sampled, density_grid, ray_valid, z_vals)
+        rgbs = ray_manager.get_colour(xyz_sampled, colour_grid, weight, True)
+        all_rgbs.append(rgbs.cpu())
+    all_rgbs = torch.cat(all_rgbs, dim=1)
+
+    all_rgbs = all_rgbs.view(batch_size, 1080, 1920, 3).permute(0, 3, 1, 2)
+
+    for item_id in range(batch_size):
+        save_image(all_rgbs[item_id], save_names[item_id])
+
+class RayManager(nn.Module):
     def __init__(self, device = None, dtype=torch.float32):
         super().__init__()
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") if device is None else device
@@ -374,7 +458,7 @@ class SplitModel(nn.Module):
         return torch.cat([opacity, colour], dim=1)
 
 class RGBAGridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, split_model=False, no_lr_reduce=False):
+    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, split_model=False, no_lr_reduce=False, test_output_dir=None):
         super().__init__()
 
         if split_model:
@@ -393,11 +477,24 @@ class RGBAGridReconstruction(L.LightningModule):
         self.ckpt_dir = ckpt_dir
         self.save_every_n_checkpoints = save_every_n_checkpoints
         self.no_lr_reduce = no_lr_reduce
-        self.RayManager = RGBARayManager()
+        self.RayManager = RayManager()
+        self.test_vis_pieces = ["RPf_00347",
+                                "RPf_00204",
+                                'RPf_00892',
+                                'RPf_00822',
+                                'RPf_00586',
+                                'RPf_00708',
+                                'RPf_00059',
+                                'RPf_00925',
+                                'RPf_00017',
+                                'RPf_00280',
+                                'RPf_00030',
+                                'RPf_00363']
+        self.test_output_dir = test_output_dir
 
     def get_dice_score(self, representation_opacity, reconstruction_opacity):
         representation_opacity = (representation_opacity > 0.5).float()
-        dice_score = 2 * torch.sum(representation_opacity * reconstruction_opacity, dim=[1, 2, 3]) / (torch.sum(representation_opacity, dim=[1, 2, 3]) + torch.sum(reconstruction_opacity, dim=[1, 2, 3]) + 1e-8)
+        dice_score = 2 * torch.sum(representation_opacity * reconstruction_opacity, dim=[1, 2, 3, 4]) / (torch.sum(representation_opacity, dim=[1, 2, 3, 4]) + torch.sum(reconstruction_opacity, dim=[1, 2, 3, 4]) + 1e-8)
         dice_score = torch.mean(dice_score)
 
         return dice_score
@@ -408,7 +505,7 @@ class RGBAGridReconstruction(L.LightningModule):
         return 1. - torch.exp(-density_grid * torch.mean(opacity_multiplier))
 
     def calculate_loss(self, batch, stage):
-        grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = batch
+        grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_names = batch
         reconstruction = self.model(grid)
 
         density_reconstruction = reconstruction[:, :1]
@@ -456,6 +553,17 @@ class RGBAGridReconstruction(L.LightningModule):
         self.log(stage + '_mask_colour_loss', mask_colour_loss)
 
         dice_loss = self.get_dice_score(opacity_grid, reconstructed_opacity_grid)
+
+
+        if stage == 'test':
+            vis_pieces = np.array([x.split(".")[0] in self.test_vis_pieces for x in piece_names])
+            if vis_pieces.any():
+                image_names = [f"{self.test_output_dir}{x.split(".")[0]}.jpg" for x in np.array(piece_names)[vis_pieces]]
+                os.makedirs(self.test_output_dir, exist_ok=True)
+                visualise_grid(density_reconstruction[vis_pieces], colour_reconstruction[vis_pieces], image_names)
+
+
+
         del opacity_grid, reconstructed_opacity_grid, density_grid, colour_grid, density_reconstruction, colour_reconstruction, opacity_mask
 
         self.log(stage + '_dice_loss', dice_loss)
@@ -505,6 +613,11 @@ class RGBAGridReconstruction(L.LightningModule):
         del opacity_loss, dice_loss, mask_colour_loss, density_loss, l1_loss
         self.log(stage + '_final_loss', final_loss)
 
+
+
+
+
+
         return final_loss
 
     def training_step(self, batch, batch_idx):
@@ -512,6 +625,8 @@ class RGBAGridReconstruction(L.LightningModule):
 
     def test_step(self, batch, batch_idx):
         self.calculate_loss(batch, stage='test')
+
+
 
     def validation_step(self, batch, batch_idx):
         self.calculate_loss(batch, stage='val')
@@ -554,10 +669,11 @@ if __name__ == "__main__":
 
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='OverfitRGBAGridReconstruction' if args.overfit else 'RGBAGridReconstruction')
     ckpt_dir = f"RGBAGridReconstructionCheckpoints/{run_name}/"
+    test_output_dir = f"RGBAGridReconstructionTestOutputs/{run_name}/"
 
     save_every_n_checkpoints = 75 if args.overfit else 2
     ray_manager_dtype = torch.float16 if args.low_acc else torch.float32
-    model = RGBAGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm, save_every_n_checkpoints=save_every_n_checkpoints, split_model=args.split_model, no_lr_reduce=args.no_lr_reduce)
+    model = RGBAGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm, save_every_n_checkpoints=save_every_n_checkpoints, split_model=args.split_model, no_lr_reduce=args.no_lr_reduce, test_output_dir=test_output_dir)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )
@@ -567,3 +683,8 @@ if __name__ == "__main__":
     accelerator = "gpu"
     trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback, lr_monitor], precision=precision, logger=wandb_logger, num_sanity_val_steps=0, accumulate_grad_batches=8)
     trainer.fit(model, datamodule=dataset_loader)
+
+    results = trainer.test(model, datamodule=dataset_loader)
+
+    with open(f"{test_output_dir}/test_results.json", "w") as f:
+        json.dump(results, f, indent=4)

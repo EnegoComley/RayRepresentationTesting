@@ -18,9 +18,10 @@ import json
 
 checkpoints_folder = "RGBAGridReconstructionCheckpoints"
 
-
 dataset_loader = RepairDatasetLoader(batch_size=5, dataset_type="RGBAGridDataset",
-                                         representation_folder_name="RGBAGrids", num_workers=3)
+                                         representation_folder_name="RGBAGrids", num_workers=3, dataset_path="~/masters/datasets/")
+
+
 
 trainer = L.Trainer(max_epochs=1, accelerator="gpu")
 model_folders = [x for x in os.listdir(checkpoints_folder) if os.path.isdir(os.path.join(checkpoints_folder, x))]

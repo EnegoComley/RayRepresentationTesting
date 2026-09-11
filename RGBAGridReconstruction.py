@@ -407,6 +407,7 @@ class RGBAGridReconstructionNetwork(nn.Module):
                 return self.block(x)
 
 
+        num_groups_in_middle = 2 if split_model and not fusion_model else 1
 
         encoder_blocks = [
             [
@@ -415,16 +416,16 @@ class RGBAGridReconstructionNetwork(nn.Module):
                 ConvBlock(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
             ],
             DownBlock(64 * scale, 128 * scale),  # 96 -> 48
-            DownBlock(128 * scale, 128 * scale),  # 46 -> 24
+            DownBlock(128 * scale, 128 * scale, groups=num_groups_in_middle),  # 46 -> 24
             [
-                DownBlock(128 * scale, 128 * scale),  # 24 -> 12
-                ConvBlock(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
+                DownBlock(128 * scale, 128 * scale, groups=num_groups_in_middle),  # 24 -> 12
+                ConvBlock(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1, groups=num_groups_in_middle),
             ],
 
             #The following downsample is not done by default
             [
-                DownBlock(128 * scale, 128 * scale), # 12 -> 6
-                ConvBlock(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1),
+                DownBlock(128 * scale, 128 * scale, groups=num_groups_in_middle), # 12 -> 6
+                ConvBlock(128 * scale, 128 * scale, kernel_size=3, stride=1, padding=1, groups=num_groups_in_middle),
             ]
 
         ][:(downsamples + 1)]
@@ -436,12 +437,12 @@ class RGBAGridReconstructionNetwork(nn.Module):
 
         decoder_blocks = [
             # The following downsample is not done by default
-            UpBlock(128 * scale, 128 * scale),  # 6 -> 12
+            UpBlock(128 * scale, 128 * scale, groups=num_groups_in_middle),  # 6 -> 12
 
 
             # This bit is done by default.
-            UpBlock(128 * scale, 128 * scale), # 12 -> 24
-            UpBlock(128 * scale, 64 * scale), # 24 -> 48
+            UpBlock(128 * scale, 128 * scale, groups=num_groups_in_middle), # 12 -> 24
+            UpBlock(128 * scale, 64 * scale, groups=num_groups_in_middle), # 24 -> 48
             UpBlock(64 * scale, 64 * scale), # 48 -> 96
             [
                 ConvBlock(64 * scale, 32 * scale, kernel_size=3, stride=1, padding=1),

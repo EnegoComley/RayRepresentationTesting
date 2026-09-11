@@ -341,22 +341,39 @@ class RayManager(nn.Module):
         return rgb_map
 
 class RGBAGridReconstructionNetwork(nn.Module):
-    def __init__(self, scale=1, downsamples = 3, no_batch_norm = False, channel_size= 4):
+    def __init__(self, scale=1, downsamples = 3, no_batch_norm = False, channel_size= 4, split_model = False):
         super().__init__()
+        if split_model:
+            assert channel_size % 2 == 0, "Channel size must be even for split model"
 
         class ConvBlock(nn.Module):
-            def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+            def __init__(self, in_channels, out_channels, kernel_size, stride, padding, groups = 2 if split_model else 1):
                 super().__init__()
                 if not no_batch_norm:
-                    self.block = nn.Sequential(nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding=padding),
+                    self.block = nn.Sequential(nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding=padding, groups=groups),
                                                nn.BatchNorm3d(out_channels),
                                                nn.ReLU())
                 else:
-                    self.block = nn.Sequential(nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding=padding),
+                    self.block = nn.Sequential(nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding=padding, groups=groups),
                                                nn.ReLU())
 
             def forward(self, x):
                 return self.block(x)
+
+        class SplitBlock(nn.Module):
+            def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+                super().__init__()
+                self.opacity_block = ConvBlock(in_channels[0], out_channels[0], kernel_size, stride, padding)
+                self.colour_block = ConvBlock(in_channels[1], out_channels[1], kernel_size, stride, padding)
+                self.in_channels = in_channels
+
+
+            def forward(self, x):
+                opacity = x[:, :self.in_channels]
+                colour = x[:, self.in_channels:]
+                opacity = self.opacity_block(opacity)
+                colour = self.colour_block(colour)
+                return torch.cat([opacity, colour], 1)
 
         class DownBlock(nn.Module):
             def __init__(self, in_channels, out_channels):
@@ -389,7 +406,7 @@ class RGBAGridReconstructionNetwork(nn.Module):
 
         encoder_blocks = [
             [
-                ConvBlock(channel_size, 32 * scale, kernel_size=3, stride=1, padding=1),  # 96 -> 96
+                SplitBlock([1,3], [16 * scale, 16*scale], kernel_size=3, stride=1, padding=1) if split_model else ConvBlock(channel_size, 32 * scale, kernel_size=3, stride=1, padding=1),  # 96 -> 96
                 ConvBlock(32 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
                 ConvBlock(64 * scale, 64 * scale, kernel_size=3, stride=1, padding=1),
             ],
@@ -461,10 +478,10 @@ class RGBAGridReconstruction(L.LightningModule):
     def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, split_model=False, no_lr_reduce=False, test_output_dir=None):
         super().__init__()
 
-        if split_model:
-            self.model = SplitModel(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
-        else:
-            self.model = RGBAGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
+        #if split_model:
+        #    self.model = SplitModel(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
+        #else:
+        self.model = RGBAGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm, split_model=split_model)
         self.no_batch_norm = no_batch_norm
         self.lr = learning_rate
         self.downsamples = downsamples

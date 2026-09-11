@@ -380,16 +380,16 @@ class RGBAGridReconstructionNetwork(nn.Module):
                 return torch.cat([opacity, colour], 1)
 
         class DownBlock(nn.Module):
-            def __init__(self, in_channels, out_channels):
+            def __init__(self, in_channels, out_channels, groups= 2 if split_model else 1):
                 super().__init__()
                 self.block = nn.Sequential(nn.MaxPool3d(2),
-                                           ConvBlock(in_channels, out_channels, 3, 1, 1))
+                                           ConvBlock(in_channels, out_channels, 3, 1, 1, groups=groups))
 
             def forward(self, x):
                 return self.block(x)
 
         class UpBlock(nn.Module):
-            def __init__(self, in_channels, out_channels):
+            def __init__(self, in_channels, out_channels, groups= 2 if split_model else 1):
                 super().__init__()
                 self.block = nn.Sequential(
                     nn.ConvTranspose3d(in_channels, in_channels, kernel_size=4, stride=2, padding=1),

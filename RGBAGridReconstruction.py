@@ -24,6 +24,7 @@ if __name__ == "__main__":
     parser.add_argument('--overfit', action='store_true', help='Overfit the model on a small subset of the data for debugging')
     parser.add_argument('--no_batch_norm', action='store_true', help="Don't use batch normalization")
     parser.add_argument('--split_model', action='store_true', help='Use a split model for training')
+    parser.add_argument('--fusion_model', action='store_true', help='Use a fusion model for training')
     parser.add_argument('--no_lr_reduce', action='store_true', help='Don\'t reduce the learning rate on plateau')
 
 
@@ -341,8 +342,11 @@ class RayManager(nn.Module):
         return rgb_map
 
 class RGBAGridReconstructionNetwork(nn.Module):
-    def __init__(self, scale=1, downsamples = 3, no_batch_norm = False, channel_size= 4, split_model = False):
+    def __init__(self, scale=1, downsamples = 3, no_batch_norm = False, channel_size= 4, split_model = False, fusion_model = False):
         super().__init__()
+        if fusion_model:
+            split_model = True
+
         if split_model:
             assert channel_size % 2 == 0, "Channel size must be even for split model"
 
@@ -441,7 +445,7 @@ class RGBAGridReconstructionNetwork(nn.Module):
             UpBlock(64 * scale, 64 * scale), # 48 -> 96
             [
                 ConvBlock(64 * scale, 32 * scale, kernel_size=3, stride=1, padding=1),
-                nn.Conv3d(32 * scale, channel_size, kernel_size=3, stride=1, padding=1)
+                SplitBlock([16 * scale, 16*scale], [1,3], kernel_size=3, stride=1, padding=1) if split_model else nn.Conv3d(32 * scale, channel_size, kernel_size=3, stride=1, padding=1)
             ]
 
         ][(-downsamples - 1):]
@@ -475,18 +479,19 @@ class SplitModel(nn.Module):
         return torch.cat([opacity, colour], dim=1)
 
 class RGBAGridReconstruction(L.LightningModule):
-    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, split_model=False, no_lr_reduce=False, test_output_dir=None):
+    def __init__(self, ckpt_dir, loss_method, downsamples = 3, scale=1, learning_rate=5e-4, no_batch_norm=False, save_every_n_checkpoints=2, split_model=False, no_lr_reduce=False, test_output_dir=None, fusion_model=False):
         super().__init__()
 
         #if split_model:
         #    self.model = SplitModel(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm)
         #else:
-        self.model = RGBAGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm, split_model=split_model)
+        self.model = RGBAGridReconstructionNetwork(scale=scale, downsamples=downsamples, no_batch_norm=no_batch_norm, split_model=split_model, fusion_model=fusion_model)
         self.no_batch_norm = no_batch_norm
         self.lr = learning_rate
         self.downsamples = downsamples
         self.scale = scale
         self.split_model = split_model
+        self.fusion_model = fusion_model
         self.save_hyperparameters()
         self.loss_func = nn.L1Loss()
         self.loss_method = loss_method
@@ -678,6 +683,8 @@ if __name__ == "__main__":
         run_name = "overfit_" + run_name
     if args.split_model:
         run_name = "split_model_" + run_name
+    if args.fusion_model:
+        run_name = "fusion_model_" + run_name
     if args.no_batch_norm:
         run_name += "_no_batch_norm"
     if args.no_lr_reduce:
@@ -690,7 +697,7 @@ if __name__ == "__main__":
 
     save_every_n_checkpoints = 75 if args.overfit else 2
     ray_manager_dtype = torch.float16 if args.low_acc else torch.float32
-    model = RGBAGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm, save_every_n_checkpoints=save_every_n_checkpoints, split_model=args.split_model, no_lr_reduce=args.no_lr_reduce, test_output_dir=test_output_dir)
+    model = RGBAGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm, save_every_n_checkpoints=save_every_n_checkpoints, split_model=args.split_model, no_lr_reduce=args.no_lr_reduce, test_output_dir=test_output_dir, fusion_model=args.fusion_model)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )

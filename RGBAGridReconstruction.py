@@ -392,14 +392,14 @@ class RGBAGridReconstructionNetwork(nn.Module):
             def __init__(self, in_channels, out_channels, groups= 2 if split_model else 1):
                 super().__init__()
                 self.block = nn.Sequential(
-                    nn.ConvTranspose3d(in_channels, in_channels, kernel_size=4, stride=2, padding=1),
+                    nn.ConvTranspose3d(in_channels, in_channels, kernel_size=4, stride=2, padding=1, groups=groups),
                     # 24 -> 48
                     nn.BatchNorm3d(in_channels),
                     nn.ReLU(),
-                    nn.Conv3d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
+                    nn.Conv3d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, groups=groups),
                     nn.BatchNorm3d(out_channels),
                     nn.ReLU(),
-                    nn.Conv3d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
+                    nn.Conv3d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, groups=groups),
                     nn.BatchNorm3d(out_channels),
                     nn.ReLU())
 

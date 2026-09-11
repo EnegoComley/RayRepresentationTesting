@@ -19,7 +19,7 @@ import json
 checkpoints_folder = "RGBAGridReconstructionCheckpoints"
 
 dataset_loader = RepairDatasetLoader(batch_size=5, dataset_type="RGBAGridDataset",
-                                         representation_folder_name="RGBAGrids", num_workers=3, dataset_path="~/masters/datasets/")
+                                         representation_folder_name="RGBAGrids", num_workers=3, data_dir="~/masters/datasets/")
 
 
 

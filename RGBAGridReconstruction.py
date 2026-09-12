@@ -23,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
     parser.add_argument('--overfit', action='store_true', help='Overfit the model on a small subset of the data for debugging')
     parser.add_argument('--no_batch_norm', action='store_true', help="Don't use batch normalization")
-    parser.add_argument('--split_model', action='store_true', help='Use a split model for training')
+    parser.add_argument('--new_split_model', action='store_true', help='Use a split model for training')
     parser.add_argument('--fusion_model', action='store_true', help='Use a fusion model for training')
     parser.add_argument('--no_lr_reduce', action='store_true', help='Don\'t reduce the learning rate on plateau')
 
@@ -367,8 +367,8 @@ class RGBAGridReconstructionNetwork(nn.Module):
         class SplitBlock(nn.Module):
             def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
                 super().__init__()
-                self.opacity_block = ConvBlock(in_channels[0], out_channels[0], kernel_size, stride, padding)
-                self.colour_block = ConvBlock(in_channels[1], out_channels[1], kernel_size, stride, padding)
+                self.opacity_block = ConvBlock(in_channels[0], out_channels[0], kernel_size, stride, padding, groups=1)
+                self.colour_block = ConvBlock(in_channels[1], out_channels[1], kernel_size, stride, padding, groups=1)
                 self.in_channels = in_channels
 
 
@@ -682,7 +682,7 @@ if __name__ == "__main__":
         run_name += f"_lr={args.lr}"
     if args.overfit:
         run_name = "overfit_" + run_name
-    if args.split_model:
+    if args.new_split_model:
         run_name = "group_split_model_" + run_name
     if args.fusion_model:
         run_name = "fusion_model_" + run_name
@@ -698,7 +698,7 @@ if __name__ == "__main__":
 
     save_every_n_checkpoints = 75 if args.overfit else 2
     ray_manager_dtype = torch.float16 if args.low_acc else torch.float32
-    model = RGBAGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm, save_every_n_checkpoints=save_every_n_checkpoints, new_split_model=args.split_model, no_lr_reduce=args.no_lr_reduce, test_output_dir=test_output_dir, fusion_model=args.fusion_model)
+    model = RGBAGridReconstruction(ckpt_dir=ckpt_dir, loss_method=args.loss_method, downsamples=args.downsamples, learning_rate=args.lr, scale=args.scale, no_batch_norm=args.no_batch_norm, save_every_n_checkpoints=save_every_n_checkpoints, new_split_model=args.new_split_model, no_lr_reduce=args.no_lr_reduce, test_output_dir=test_output_dir, fusion_model=args.fusion_model)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )

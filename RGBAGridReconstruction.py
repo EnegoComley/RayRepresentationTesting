@@ -373,8 +373,8 @@ class RGBAGridReconstructionNetwork(nn.Module):
 
 
             def forward(self, x):
-                opacity = x[:, :self.in_channels]
-                colour = x[:, self.in_channels:]
+                opacity = x[:, :self.in_channels[0]]
+                colour = x[:, self.in_channels[0]:]
                 opacity = self.opacity_block(opacity)
                 colour = self.colour_block(colour)
                 return torch.cat([opacity, colour], 1)
@@ -670,7 +670,7 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
-    dataset_loader = RepairDatasetLoader(batch_size=2 if args.no_logger else 8, dataset_type="RGBAGridDataset",
+    dataset_loader = RepairDatasetLoader(batch_size=1 if args.no_logger else 8, dataset_type="RGBAGridDataset",
                                          representation_folder_name="RGBAGrids", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
     L.seed_everything(42)
     run_name = f"loss={args.loss_method}_scale={args.scale}"

@@ -617,18 +617,23 @@ class RGBAGridReconstruction(L.LightningModule):
             final_loss = density_loss + opacity_loss
         elif self.loss_method == "O+RGB":
             final_loss = opacity_loss + mask_colour_loss
+        elif self.loss_method == "WO+RGB":
+            final_loss = opacity_loss * 30 + mask_colour_loss
         elif self.loss_method == "O+RGB+Dice":
             final_loss = opacity_loss + mask_colour_loss + dice_loss
         elif self.loss_method == "DO+RGB":
             final_loss = density_loss + opacity_loss + mask_colour_loss
+        elif self.loss_method == "WDO+RGB":
+            final_loss = density_loss + opacity_loss * 30 + mask_colour_loss * 2
         elif self.loss_method == "DO+RGB+Dice":
             final_loss = density_loss + opacity_loss + mask_colour_loss + dice_loss
         elif self.loss_method == "D+RGB":
             final_loss = density_loss + mask_colour_loss
-        elif self.loss_method == "DO+RGB+Ray":
-            final_loss = density_loss + opacity_loss + mask_colour_loss
-        elif self.loss_method == "DO+RGB+Ray+Dice":
-            final_loss = density_loss + opacity_loss + mask_colour_loss + dice_loss
+        elif self.loss_method == "WDO+RGB+RealRay":
+            final_loss =  density_loss + opacity_loss * 30 + mask_colour_loss * 2 + edge_ray_loss + center_ray_loss + center_ray_rgb_loss
+        elif self.loss_method == "WDO+RGB+RealRay+Dice":
+            final_loss =  density_loss + opacity_loss * 30 + mask_colour_loss * 2 + edge_ray_loss + center_ray_loss + center_ray_rgb_loss + dice_loss
+
 
         else:
             raise ValueError(f"Unknown loss method: {self.loss_method}")

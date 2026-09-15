@@ -716,5 +716,5 @@ if __name__ == "__main__":
 
     results = trainer.test(model, datamodule=dataset_loader)
 
-    with open(f"{test_output_dir}/test_results.json", "w") as f:
+    with open(f"{test_output_dir}test_results.json", "w") as f:
         json.dump(results, f, indent=4)

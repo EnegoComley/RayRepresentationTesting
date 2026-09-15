@@ -7,6 +7,7 @@ from scipy.spatial.transform import Rotation
 import lightning as L
 from typing import Iterable, List, Tuple, Union
 
+
 from NerfRepresentationUtils import ColourPredictionPredictionNetwork
 
 import itertools
@@ -134,6 +135,61 @@ class RayRepairDatasetDataloader(RepairDatasetLoader):
                 piece_to_rotated_pieces.update({x: [f for f in representation_files if x in f]})
         self.dataset_info_dict["piece_to_rotated_pieces"] = piece_to_rotated_pieces
 
+class PointCloudDatasetDataloader(RepairDatasetLoader):
+    def __init__(self, split_dict, dataset_info_dict):
+        self.piece_names = split_dict["pieces"]
+        self.representation_data_dir = dataset_info_dict["data_dir"]
+
+    def __len__(self):
+        return len(self.piece_names)
+
+
+    def rotate_pointcloud(self, points, normals, rotation):
+        return points, normals
+
+    def __getitem__(self, idx):
+        piece_name = self.piece_names[idx]
+        points, normals, colors = self.load_pointcloud(piece_name, rotation=None)
+        return points, normals, colors
+
+    def load_pointcloud(self, path, rotation=None):
+        full_path = os.path.join(self.representation_data_dir, path)
+        data = np.load(full_path)
+        points_numpy = data['points']
+        normals_numpy = data['normals']
+        colors_numpy = data['colors']
+
+
+        points = torch.from_numpy(points_numpy).to(dtype=torch.float32)
+        normals = torch.from_numpy(normals_numpy).to(dtype=torch.float32)
+        colors = torch.from_numpy(colors_numpy).to(dtype=torch.float32)
+        # Normalise colours between 0 and 1
+        #colors = colors / 255.0
+        from torch_pointcloud.transforms import Shift
+
+        points = Shift(keys="pos", method="bbox", axes=[0, 1, 2])({"pos":points})["pos"]
+
+        if rotation is not None:
+            points, normals = self.rotate_pointcloud(points, normals, rotation)
+
+        return points, normals, colors
+
+class RandomRotationPointCloudsDataloader(PointCloudDatasetDataloader):
+    def rotate_pointcloud(self, points, normals, rotation):
+        rotation_matrix = torch.from_numpy(rotation.as_matrix()).to(dtype=torch.float32)
+        rotated_points = torch.matmul(points, rotation_matrix.T)
+        rotated_normals = torch.matmul(normals, rotation_matrix.T)
+        return rotated_points, rotated_normals
+
+    def __getitem__(self, idx):
+        piece_name = self.piece_names[idx]
+
+        # Randomly generate a 3D rotation
+        random_rotation = Rotation.random()
+        points, normals, colors = self.load_pointcloud(piece_name, rotation=random_rotation)
+        rotation = torch.from_numpy(random_rotation.as_matrix()).to(dtype=torch.float32)
+
+        return points, normals, colors, rotation
 
 class GridDataset(Dataset):
     def __init__(self, split_dict, dataset_info_dict):
@@ -250,21 +306,21 @@ class RGBAGridDataset(InterpolatableGridDataset):
         blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = self.load_coloured_rays(piece_name, rotation=None)
         return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_name
 
-    def load_grid_representation(self, path, rotation=None):
-        full_path = os.path.join(self.representation_data_dir, path)
-        data = np.load(full_path)
-        decomposed_density_tensor_numpy = data['decomposed_density_tensor']
-        decomposed_colour_tensor_numpy = data['decomposed_colour_tensor']
-        opacity_multiplier = data['opacity_multiplier']
+    #def load_grid_representation(self, path, rotation=None):
+    #    full_path = os.path.join(self.representation_data_dir, path)
+    #    data = np.load(full_path)
+    #    decomposed_density_tensor_numpy = data['decomposed_density_tensor']
+    #    decomposed_colour_tensor_numpy = data['decomposed_colour_tensor']
+    #    opacity_multiplier = data['opacity_multiplier']
+    #
+    #    decomposed_density_tensor = torch.from_numpy(decomposed_density_tensor_numpy).to(dtype=torch.float32)
+    #    decomposed_colour_tensor = torch.from_numpy(decomposed_colour_tensor_numpy).to(dtype=torch.float32)
 
-        decomposed_density_tensor = torch.from_numpy(decomposed_density_tensor_numpy).to(dtype=torch.float32)
-        decomposed_colour_tensor = torch.from_numpy(decomposed_colour_tensor_numpy).to(dtype=torch.float32)
+     #   grid = torch.cat((self.compose_grid(decomposed_density_tensor), self.compose_grid(decomposed_colour_tensor)), dim=0)
+      #  if rotation is not None:
+       #     grid = self.rotate_grid(grid, rotation)
 
-        grid = torch.cat((self.compose_grid(decomposed_density_tensor), self.compose_grid(decomposed_colour_tensor)), dim=0)
-        if rotation is not None:
-            grid = self.rotate_grid(grid, rotation)
-
-        return grid, opacity_multiplier
+        #return grid, opacity_multiplier
 
     def compose_grid(self, decomposed_tensor):
         axis, channels, dim = decomposed_tensor.shape

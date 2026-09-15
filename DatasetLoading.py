@@ -6,7 +6,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 import lightning as L
 from typing import Iterable, List, Tuple, Union
-
+import torch.nn.functional as F
 
 from NerfRepresentationUtils import ColourPredictionPredictionNetwork
 
@@ -347,6 +347,45 @@ class RGBAGridDataset(InterpolatableGridDataset):
             grid = self.rotate_grid(grid, rotation)
 
         return grid, opacity_multiplier
+
+class RandomRotationRGBAGridDataset(RGBAGridDataset):
+    def rotate_grid(self, grid_to_rotate, rotation):
+        rotated_grid = torch.zeros_like(grid_to_rotate).permute(1, 2, 3, 0)
+
+        axis = torch.linspace(-1, 1, grid_to_rotate.shape[-1])
+        x, y, z = torch.meshgrid(axis, axis, axis, indexing='ij')
+        cord_grid = torch.stack((x, y, z), dim=-1)
+        inverse_rotation = torch.tensor(rotation.inv().as_matrix(), dtype=torch.float32)
+        cord_grid = cord_grid @ inverse_rotation.T
+
+        # Get the set of cords within the -1 to 1 range
+        mask = (cord_grid >= -1) & (cord_grid <= 1)
+        mask = mask.all(dim=-1)
+
+        cords_to_sample = cord_grid[mask]
+
+        sample_grid = cords_to_sample.reshape(1, 1, -1, 1, 3)
+
+        sampled = F.grid_sample(
+            grid_to_rotate.unsqueeze(0),
+            sample_grid,
+            mode='bilinear',
+            align_corners=True
+        )
+
+        # (1, 4, 1, N, 1) -> (N, 4)
+        sampled = sampled[0, :, 0, :, 0].T
+        rotated_grid[mask] = sampled
+        return rotated_grid.permute(3, 0, 1, 2)
+
+    def __getitem__(self, idx):
+        piece_name = self.piece_names[idx]
+
+        random_rotation = Rotation.random()
+        grid, opacity_multiplier = self.load_grid_representation(piece_name, rotation=random_rotation)
+
+        return grid, opacity_multiplier, piece_name, torch.tensor(random_rotation.as_matrix(), dtype=torch.float32)
+    
 
 class RawGridDataset(GridDataset):
     def load_raw_representation(self, path: str, device: Union[str, torch.device] = 'cpu') -> Tuple[

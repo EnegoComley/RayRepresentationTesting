@@ -123,7 +123,7 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if args.ncc else "~/Documents/masters/datasets/"
 
-    encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1]) if args.model.contains("_") else encoders[args.model]()
+    encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1]) if "_" in args.model else encoders[args.model]()
 
     dataset_loader = RepairDatasetLoader(batch_size=encoder.batch_size if args.no_logger else 8, dataset_type=encoder.dataloader["rotated"],
                                          representation_folder_name=encoder.representation_folder_name, num_workers=3, data_dir=datasets_path)

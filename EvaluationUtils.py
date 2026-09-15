@@ -19,6 +19,8 @@ from torch_pointcloud.transforms import Shift
 
 from torch import nn
 
+from RGBAGridReconstruction import RGBAGridReconstruction
+
 class TransformerEncoder(nn.Module):
     def __init__(self, transformer_layers=1, representation_size=128, nhead=16):
         super().__init__()
@@ -66,17 +68,25 @@ class Encoder(torch.nn.Module):
 
 
 class RGBAGridEncoder(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, model):
         super().__init__()
-        self.dataloader = {"plain" : "RGBAGridDataset"}
-        self.representation_folder_name = ""
-        self.embedding_size = 64
-        self.batch_size = 32
-        self.accumulate_grad_batches = 1
+        self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset"}
+        self.representation_folder_name = "RGBAGrids"
+        self.batch_size = 1
+        self.accumulate_grad_batches = 32
+
+        lightning_model = RGBAGridReconstruction.load_from_checkpoint(f"{model}.ckpt", device=torch.device("cuda"))
+        self.embedding_size = lightning_model.scale * 128
+
+        self.model = lightning_model.model.encoder
+        del lightning_model
 
     def forward(self, batch):
-        raise NotImplementedError
-        return batch
+        grid, opacity_multiplier, piece_name, random_rotation = batch
+        with torch.inference_mode():
+            representation = self.model(grid)
+            return representation.view(representation.shape[0], representation.shape[1], -1).permute(0, 2, 1)
+
 
 
 class PointEncoder(Encoder):
@@ -294,4 +304,4 @@ class KPConv(PointEncoder):
 
 
 
-encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv}
+encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder}

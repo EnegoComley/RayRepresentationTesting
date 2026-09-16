@@ -149,10 +149,10 @@ class PointCloudDatasetDataloader(RepairDatasetLoader):
 
     def __getitem__(self, idx):
         piece_name = self.piece_names[idx]
-        points, normals, colors = self.load_pointcloud(piece_name, rotation=None)
+        points, normals, colors = self.load_pointcloud(piece_name)
         return points, normals, colors
 
-    def load_pointcloud(self, path, rotation=None):
+    def load_pointcloud(self, path):
         full_path = os.path.join(self.representation_data_dir, path)
         data = np.load(full_path)
         points_numpy = data['points']
@@ -169,9 +169,6 @@ class PointCloudDatasetDataloader(RepairDatasetLoader):
 
         points = Shift(keys="pos", method="bbox", axes=[0, 1, 2])({"pos":points})["pos"]
 
-        if rotation is not None:
-            points, normals = self.rotate_pointcloud(points, normals, rotation)
-
         return points, normals, colors
 
 class RandomRotationPointCloudsDataloader(PointCloudDatasetDataloader):
@@ -186,10 +183,26 @@ class RandomRotationPointCloudsDataloader(PointCloudDatasetDataloader):
 
         # Randomly generate a 3D rotation
         random_rotation = Rotation.random()
-        points, normals, colors = self.load_pointcloud(piece_name, rotation=random_rotation)
+        points, normals, colors = self.load_pointcloud(piece_name)
+        points, normals = self.rotate_pointcloud(points, normals, random_rotation)
         rotation = torch.from_numpy(random_rotation.as_matrix()).to(dtype=torch.float32)
 
         return points, normals, colors, rotation
+
+class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloader):
+    def __getitem__(self, idx):
+        piece_name = self.piece_names[idx]
+
+        # Randomly generate a 3D rotation
+        random_rotation = Rotation.random()
+        random_rotation2 = Rotation.random()
+        points, normals, colors = self.load_pointcloud(piece_name)
+        points, normals = self.rotate_pointcloud(points, normals, random_rotation)
+        points2, normals2 = self.rotate_pointcloud(points, normals, random_rotation2)
+
+        rotation = torch.from_numpy(random_rotation2.as_quat()).to(dtype=torch.float32)
+
+        return (points, normals, colors), (points2, normals2, colors), rotation
 
 class GridDataset(Dataset):
     def __init__(self, split_dict, dataset_info_dict):

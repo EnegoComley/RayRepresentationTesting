@@ -30,7 +30,7 @@ from EvaluationUtils import TransformerEncoder
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Normal Prediction Evaluation')
+    parser = argparse.ArgumentParser(description='Pos Encoding Evaluation')
     parser.add_argument('--model', type=str, default="PTV3", help='The model to be evaluated')
     parser.add_argument('--ncc', action='store_true', help='Running on the NCC?')
     parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-class NormalPredictionNetwork(nn.Module):
+class PosEncodingEvaluationNetwork(nn.Module):
     def __init__(self, encoder_model):
         super().__init__()
 
@@ -53,15 +53,14 @@ class NormalPredictionNetwork(nn.Module):
 
 
 
-        self.head = nn.Sequential(nn.Linear(512, 64),
-                                  nn.BatchNorm1d(64),
+        self.head = nn.Sequential(nn.Linear(512, 350),
+                                  nn.BatchNorm1d(350),
                                   nn.ReLU(),
-                                  nn.Linear(64, 3))
+                                  nn.Linear(350, representation_size))
 
 
-    def forward(self, batch):
+    def forward(self, x):
         #with torch.autocast(device_type="cuda", dtype=torch.float16):
-        x = self.encoder_model(batch)
 
         x = self.transformer(x)
 
@@ -70,35 +69,29 @@ class NormalPredictionNetwork(nn.Module):
 
         return x
 
+    def encode(self, batch):
+        x = self.encoder_model(batch)
+        return x
 
 
-class PatternNormalPrediction(L.LightningModule):
+
+class PosEncodingEvaluationPrediction(L.LightningModule):
     def __init__(self, encoder_model):
         super().__init__()
-        self.model = NormalPredictionNetwork(encoder_model)
+        self.model = PosEncodingEvaluationNetwork(encoder_model)
         self.lr = 1e-4
 
-    def get_normals(self, rotations):
-        batch_size = rotations.shape[0]
-        normals = torch.tensor([0, 1, 0], dtype=torch.float32).repeat(batch_size, 1).unsqueeze(2).to(rotations.get_device())
-        return torch.matmul(rotations, normals).squeeze(2)
 
     def calculate_loss(self, batch, stage):
-        rotation = batch[-1]
-        predicted_normals = self.model(batch)
-        true_normals = self.get_normals(rotation)
-        loss = nn.functional.mse_loss(predicted_normals, true_normals)
-        self.log(f'{stage}_loss', loss)
+        encoding = self.model.encode(batch)
+        prediction = self.model(encoding)
+        b, n, embed_size = encoding.shape
+        encoding = encoding.view(b, 12, 12, 12, embed_size)
+        target = encoding[:, 6, 6, 6]
 
-        # Calculate angular error
-        predicted_normals = nn.functional.normalize(predicted_normals, dim=1)
-        true_normals = nn.functional.normalize(true_normals, dim=1)
-        cos_angles = torch.clamp(torch.sum(predicted_normals * true_normals, dim=1), -1.0, 1.0)
-        angles = torch.acos(cos_angles)  # in radians
-        angular_error = torch.mean(angles) * (180.0 / np.pi)  # convert to degrees
-        self.log(f'{stage}_angular_error', angular_error)
+        loss = F.mse_loss(prediction, target)
+        self.log(stage + '_loss', loss)
 
-        del rotation, predicted_normals, true_normals, cos_angles, angles, angular_error
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -132,11 +125,11 @@ if __name__ == "__main__":
     run_name = f"{args.model}"
 
 
-    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='PatternNormalPredictionEvaluation')
-    ckpt_dir = f"PatternNormalPredictionEvaluationCheckpoints/{run_name}/"
-    test_output_dir = f"PatternNormalPredictionEvaluationResults/{run_name}/"
+    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='PosEncodingEvaluation')
+    ckpt_dir = f"PosEncodingEvaluationCheckpoints/{run_name}/"
+    test_output_dir = f"PosEncodingEvaluationResults/{run_name}/"
 
-    model = PatternNormalPrediction(encoder_model=encoder)
+    model = PosEncodingEvaluationPrediction(encoder_model=encoder)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(test_output_dir, exist_ok=True)

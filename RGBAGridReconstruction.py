@@ -26,6 +26,7 @@ if __name__ == "__main__":
     parser.add_argument('--new_split_model', action='store_true', help='Use a split model for training')
     parser.add_argument('--fusion_model', action='store_true', help='Use a fusion model for training')
     parser.add_argument('--no_lr_reduce', action='store_true', help='Don\'t reduce the learning rate on plateau')
+    parser.add_argument('--rotation', action='store_true', help='Add a random rotation')
 
 
 
@@ -528,7 +529,7 @@ class RGBAGridReconstruction(L.LightningModule):
         return 1. - torch.exp(-density_grid * torch.mean(opacity_multiplier))
 
     def calculate_loss(self, batch, stage):
-        grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_names = batch
+        grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_names, *extra_inputs = batch
         reconstruction = self.model(grid)
 
         density_reconstruction = reconstruction[:, :1]
@@ -635,6 +636,9 @@ class RGBAGridReconstruction(L.LightningModule):
             final_loss =  density_loss + opacity_loss * 30 + mask_colour_loss * 2 + edge_ray_loss + center_ray_loss + center_ray_rgb_loss
         elif self.loss_method == "WDO+RGB+RealRay+Dice":
             final_loss =  density_loss + opacity_loss * 30 + mask_colour_loss * 2 + edge_ray_loss + center_ray_loss + center_ray_rgb_loss + dice_loss
+        elif self.loss_method == "WDO+RGB+WRealRay+Dice":
+            final_loss =  density_loss + opacity_loss * 30 + mask_colour_loss * 2 + edge_ray_loss + center_ray_loss + 40 * center_ray_rgb_loss + dice_loss
+
 
 
         else:
@@ -677,8 +681,9 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
-    dataset_loader = RepairDatasetLoader(batch_size=1 if args.no_logger else 8, dataset_type="RGBAGridDataset",
+    dataset_loader = RepairDatasetLoader(batch_size=1 if args.no_logger else 8, dataset_type="RandomRotationRGBAGridDataset" if args.rotation else "RGBAGridDataset",
                                          representation_folder_name="RGBAGrids", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
+
     L.seed_everything(42)
     run_name = f"loss={args.loss_method}_scale={args.scale}"
 
@@ -697,6 +702,8 @@ if __name__ == "__main__":
         run_name += "_no_batch_norm"
     if args.no_lr_reduce:
         run_name += "_no_lr_reduce"
+    if args.rotation:
+        run_name = "rotation_" + run_name
 
 
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='OverfitRGBAGridReconstruction' if args.overfit else 'RGBAGridReconstruction')

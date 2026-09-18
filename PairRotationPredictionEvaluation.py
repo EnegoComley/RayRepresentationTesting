@@ -30,10 +30,11 @@ from EvaluationUtils import TransformerEncoder
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Normal Prediction Evaluation')
+    parser = argparse.ArgumentParser(description='Pair Rotation Prediction Evaluation')
     parser.add_argument('--model', type=str, default="PTV3", help='The model to be evaluated')
     parser.add_argument('--ncc', action='store_true', help='Running on the NCC?')
     parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
+    parser.add_argument("--angle_divider", type=float, default=1, help="The divider for the random angle")
 
 
 
@@ -41,7 +42,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-class NormalPredictionNetwork(nn.Module):
+class PairRotationPredictionNetwork(nn.Module):
     def __init__(self, encoder_model):
         super().__init__()
 
@@ -50,20 +51,25 @@ class NormalPredictionNetwork(nn.Module):
 
         self.encoder_model = encoder_model
         self.transformer = TransformerEncoder(transformer_layers=2, representation_size=representation_size)
+        self.combined_transformer = TransformerEncoder(transformer_layers=1, representation_size=512)
 
+        self.pos_encoder = nn.Parameter(torch.randn(2, 1, 1, 512))
 
 
         self.head = nn.Sequential(nn.Linear(512, 64),
                                   nn.BatchNorm1d(64),
                                   nn.ReLU(),
-                                  nn.Linear(64, 3))
+                                  nn.Linear(64, 4))
 
 
     def forward(self, batch):
-        #with torch.autocast(device_type="cuda", dtype=torch.float16):
-        x = self.encoder_model(batch)
+        x1, x2, _ = batch
+        x1 = self.encoder_model(x1)
+        x2 = self.encoder_model(x2)
 
-        x = self.transformer(x)
+        x1 = self.transformer(x1)
+        x2 = self.transformer(x2)
+        x = self.combined_transformer(torch.cat([x1 + self.pos_encoder[0].expand_as(x1), x2 + self.pos_encoder[1].expand_as(x2)], dim=1))
 
         x = torch.mean(x, dim=1)
         x = self.head(x)
@@ -72,34 +78,34 @@ class NormalPredictionNetwork(nn.Module):
 
 
 
-class PatternNormalPrediction(L.LightningModule):
+class PairRotationPrediction(L.LightningModule):
     def __init__(self, encoder_model):
         super().__init__()
-        self.model = NormalPredictionNetwork(encoder_model)
+        self.model = PairRotationPredictionNetwork(encoder_model)
         self.lr = 1e-4
 
-    def get_normals(self, rotations):
-        batch_size = rotations.shape[0]
-        normals = torch.tensor([0, 1, 0], dtype=torch.float32).repeat(batch_size, 1).unsqueeze(2).to(rotations.get_device())
-        return torch.matmul(rotations, normals).squeeze(2)
-
     def calculate_loss(self, batch, stage):
-        rotation = batch[-1]
-        predicted_normals = self.model(batch)
-        true_normals = self.get_normals(rotation)
-        loss = nn.functional.mse_loss(predicted_normals, true_normals)
-        self.log(f'{stage}_loss', loss)
+        gt_rotation = batch[-1]
+        predicted_rotation = self.model(batch)
+        predicted_rotation = nn.functional.normalize(predicted_rotation, dim=-1)
 
-        # Calculate angular error
-        predicted_normals = nn.functional.normalize(predicted_normals, dim=1)
-        true_normals = nn.functional.normalize(true_normals, dim=1)
-        cos_angles = torch.clamp(torch.sum(predicted_normals * true_normals, dim=1), -1.0, 1.0)
-        angles = torch.acos(cos_angles)  # in radians
-        angular_error = torch.mean(angles) * (180.0 / np.pi)  # convert to degrees
-        self.log(f'{stage}_angular_error', angular_error)
+        loss = nn.functional.mse_loss(predicted_rotation, gt_rotation)
+        self.log(stage + '_loss', loss)
 
-        del rotation, predicted_normals, true_normals, cos_angles, angles, angular_error
+        cos_theta = torch.sum(predicted_rotation * gt_rotation, dim=-1)
+        cos_theta = torch.clamp(cos_theta, -1.0, 1.0)
+        rot_error = torch.acos(cos_theta)
+        rot_error = torch.rad2deg(rot_error)
+        rot_rmse = torch.sqrt(rot_error.pow(2).mean())
+        rot_upper_error = torch.quantile(rot_error, 0.95)
+        # Calculate standard deviation of rotation error
+        rot_error_std = torch.sqrt(rot_error.var())
+        self.log(stage + '_angular_error', rot_rmse)
+        self.log(stage + '_angular_error_95th_percentile', rot_upper_error)
+        self.log(stage + '_angular_error_std', rot_error_std)
+
         return loss
+
 
     def training_step(self, batch, batch_idx):
         return self.calculate_loss(batch, stage='train')
@@ -125,18 +131,20 @@ if __name__ == "__main__":
     datasets_path = data_dir = "~/masters/datasets/" if args.ncc else "~/Documents/masters/datasets/"
 
     encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1]) if "_" in args.model else encoders[args.model]()
-    dataset_loader = RepairDatasetLoader(batch_size=encoder.batch_size, dataset_type=encoder.dataloader["rotated"],
-                                         representation_folder_name=encoder.representation_folder_name, num_workers=3, data_dir=datasets_path)
+
+    dataset_loader = RepairDatasetLoader(batch_size=encoder.batch_size, dataset_type=encoder.dataloader["dualRotated"],
+                                         representation_folder_name=encoder.representation_folder_name, num_workers=3, data_dir=datasets_path, angle_divider=args.angle_divider)
     L.seed_everything(42)
 
     run_name = f"{args.model}"
 
 
-    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='PatternNormalPredictionEvaluation')
-    ckpt_dir = f"PatternNormalPredictionEvaluationCheckpoints/{run_name}/"
-    test_output_dir = f"PatternNormalPredictionEvaluationResults/{run_name}/"
+    project_name = f"PairRotationPredictionEvaluation{90/args.angle_divider}" if args.angle_divider != 1 else "PairRotationPredictionEvaluation"
+    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project=project_name)
+    ckpt_dir = f"{project_name}Checkpoints/{run_name}/"
+    test_output_dir = f"{project_name}Results/{run_name}/"
 
-    model = PatternNormalPrediction(encoder_model=encoder)
+    model = PairRotationPrediction(encoder_model=encoder)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(test_output_dir, exist_ok=True)

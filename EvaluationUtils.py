@@ -83,7 +83,7 @@ class SinusoidalPositionalEncoding3D(nn.Module):
         D = 512
     """
 
-    def __init__(self, dim=512):
+    def __init__(self, dim=256):
         super().__init__()
 
         self.dim = dim
@@ -168,8 +168,8 @@ class MLPPositionalEncoding3D(nn.Module):
 
     def __init__(
         self,
-        dim=512,
-        hidden_dim=256,
+        dim=256,
+        hidden_dim=128,
     ):
         super().__init__()
 
@@ -232,41 +232,72 @@ class MLPPositionalEncoding3D(nn.Module):
         # (1, Z, Y, X, 512)
         return pe.unsqueeze(0)
 
+class NoEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, x):
+        return torch.zeros_like(x)
+
 class RGBAGridEncoder(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
-        self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset"}
+        self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset", "dualRotated" : "DualRandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
-        self.batch_size = 1
-        self.accumulate_grad_batches = 32
-        paramaters = model.split("$")
-        model = paramaters[0]
+        self.batch_size = 4
+        self.accumulate_grad_batches = 16
+        parameters = model.split("-")
+        model = parameters[0]
 
 
         lightning_model = RGBAGridReconstruction.load_from_checkpoint(f"{model}.ckpt", device=torch.device("cuda"))
-        positional_encoding = paramaters[1]
+        positional_encoding = parameters[1]
         if positional_encoding == "mlp":
             self.positional_encoding = MLPPositionalEncoding3D()
         elif positional_encoding == "sin":
             self.positional_encoding = SinusoidalPositionalEncoding3D()
+        elif positional_encoding == "none":
+            self.positional_encoding = NoEncoder()
+        elif positional_encoding == "learned":
+            self.encoding_param = nn.Parameter(torch.zeros(1, 12, 12, 12, 256), requires_grad=True)
+            self.positional_encoding = lambda x : self.encoding_param
 
 
 
         self.embedding_size = lightning_model.scale * 128
 
         self.model = lightning_model.model.encoder
+        self.model = self.model.eval()
         del lightning_model
 
     def forward(self, batch):
-        grid, opacity_multiplier, piece_name, random_rotation = batch
+        grid  = batch[0]
         with torch.inference_mode():
             representation = self.model(grid)
             representation = representation.permute(0, 2, 3, 4, 1)  # (B, C, Z, Y, X) -> (B, Z, Y, X, C)
-            representation = representation + self.positional_encoding(representation)
-            representation = representation.view(representation.shape[0], representation.shape[1], -1)
-            return representation
+        representation = representation + self.positional_encoding(representation)
+        representation = representation.view(representation.shape[0], -1, representation.shape[-1])
+        del grid
+        return representation
 
 
+class RayEncoder(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset"}
+        self.representation_folder_name = "RGBAGrids"
+        self.batch_size = 2
+        self.accumulate_grad_batches = 4
+        parameters = model.split("-")
+        model = parameters[0]
+
+
+        positional_encoding = parameters[1]
+        if positional_encoding == "mlp":
+            self.positional_encoding = MLPPositionalEncoding3D()
+        elif positional_encoding == "sin":
+            self.positional_encoding = SinusoidalPositionalEncoding3D()
+        elif positional_encoding == "none":
+            self.positional_encoding = NoEncoder()
 
 class PointEncoder(Encoder):
     def __init__(self):
@@ -277,8 +308,8 @@ class PointEncoder(Encoder):
         self.transformed_origin_pos_name = "NONE"
         self.dataloader = {"plain": "PointCloudDatasetDataloader", "rotated" : "RandomRotationPointCloudsDataloader", "dualRotated" : "RandomDualRotationPointCloudsDataloader"}
         self.representation_folder_name = "pointclouds2_5k"
-        self.batch_size = 32
-        self.accumulate_grad_batches = 1
+        self.batch_size = 16
+        self.accumulate_grad_batches = 2
 
     def package_pointcloud(self, batch):
         data =  [{"pos": batch[0][i] * 10, "normal": batch[1][i], "color": batch[2][i]} for i in range(batch[0].shape[0])] #

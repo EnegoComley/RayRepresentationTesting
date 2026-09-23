@@ -685,7 +685,7 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if not args.low_acc else "~/Documents/masters/datasets/"
 
-    dataset_loader = RepairDatasetLoader(batch_size=(1 if args.no_logger else 8) if args.sscale == 2 else 2, dataset_type="RandomRotationRGBAGridDataset" if args.rotation else "RGBAGridDataset",
+    dataset_loader = RepairDatasetLoader(batch_size=(1 if args.no_logger else 8) if args.scale == 2 else 2, dataset_type="RandomRotationRGBAGridDataset" if args.rotation else "RGBAGridDataset",
                                          representation_folder_name="RGBAGrids", num_workers=3, data_dir=datasets_path, overfit=args.overfit)
 
     L.seed_everything(42)

@@ -642,6 +642,8 @@ class RGBAGridReconstruction(L.LightningModule):
             final_loss =  density_loss + opacity_loss * 30 + mask_colour_loss * 2 + edge_ray_loss + center_ray_loss + center_ray_rgb_loss + dice_loss
         elif self.loss_method == "WDO+RGB+Dice":
             final_loss =  density_loss + opacity_loss * 30 + mask_colour_loss * 2 +  dice_loss
+        elif self.loss_method == "RealRay+Dice":
+            final_loss = edge_ray_loss + center_ray_loss + center_ray_rgb_loss + dice_loss
         elif self.loss_method == "L1+RealRay+Dice":
             final_loss = l1_loss + edge_ray_loss + center_ray_loss + center_ray_rgb_loss + dice_loss
         elif self.loss_method == "WDO+RGB+WRealRay+Dice":

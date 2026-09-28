@@ -24,6 +24,7 @@ import json
 torch.set_float32_matmul_precision('medium')
 
 from EvaluationUtils import encoders
+from EvaluationUtils import TransformerEncoder
 
 import math
 

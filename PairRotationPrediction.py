@@ -10,6 +10,8 @@ from scipy.spatial.transform import Rotation
 import gc
 import os
 
+#Ingore this file this code is old
+
 class RotationPredictionNetwork(nn.Module):
     def __init__(self):
         super().__init__()

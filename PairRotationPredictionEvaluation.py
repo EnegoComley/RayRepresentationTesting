@@ -24,7 +24,6 @@ import json
 torch.set_float32_matmul_precision('medium')
 
 from EvaluationUtils import encoders
-from EvaluationUtils import TransformerEncoder
 
 import math
 
@@ -36,6 +35,7 @@ if __name__ == "__main__":
     parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
     parser.add_argument("--angle_divider", type=float, default=1, help="The divider for the random angle")
     parser.add_argument('--overfit', action='store_true', help='Overfit the model on a small subset of the data for debugging')
+    parser.add_argument('--lr', type=float, default=1e-3, help='Initial learning rate')
     #parser.add_argument("--param_test", action='store_true', help="Run parameter test")
 
 
@@ -142,10 +142,10 @@ class PairRotationPredictionNetwork(nn.Module):
 
 
 class PairRotationPrediction(L.LightningModule):
-    def __init__(self, encoder_model):
+    def __init__(self, encoder_model, lr=1e-3):
         super().__init__()
         self.model = PairRotationPredictionNetwork(encoder_model)
-        self.lr = 5e-4
+        self.lr = lr
 
     def calculate_loss_OLD(self, batch, stage):
         gt_rotation = batch[-1]
@@ -275,6 +275,8 @@ if __name__ == "__main__":
     #    run_name = "SPECIAL GUESS"
     if args.overfit:
         run_name = "Overfit_" + run_name
+    if args.lr != 1e-3:
+        run_name += f"_lr={args.lr}"
 
 
     project_name = f"PairRotationPredictionEvaluation{90/args.angle_divider}" if args.angle_divider != 1 else "PairRotationPredictionEvaluation"
@@ -287,7 +289,7 @@ if __name__ == "__main__":
 
 
 
-    model = PairRotationPrediction(encoder_model=encoder)
+    model = PairRotationPrediction(encoder_model=encoder, lr=args.lr)
 
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(test_output_dir, exist_ok=True)

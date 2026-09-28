@@ -148,7 +148,7 @@ class PairRotationPrediction(L.LightningModule):
         self.model = PairRotationPredictionNetwork(encoder_model)
         self.lr = lr
 
-    def calculate_loss_OLD(self, batch, stage):
+    def calculate_loss(self, batch, stage):
         gt_rotation = batch[-1]
         predicted_rotation = self.model(batch)
         # Diagnostic: do not normalize here so we can inspect raw directional signal and gradients
@@ -185,7 +185,7 @@ class PairRotationPrediction(L.LightningModule):
 
         return rot_rmse
 
-    def calculate_loss(self, batch, stage): # _CLAUDE
+    def calculate_loss_CLAUDE(self, batch, stage): #
         gt = batch[-1]
         pred = F.normalize(self.model(batch), dim=-1)
         dot = (pred * gt).sum(-1)
@@ -241,20 +241,6 @@ class PairRotationPrediction(L.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return {"optimizer": optimizer}
 
-    def calculate_loss_CLAUDE(self, batch, stage):
-        gt = batch[-1]
-        pred = F.normalize(self.model(batch), dim=-1)
-        dot = (pred * gt).sum(-1)
-
-        loss = (1.0 - dot.abs()).mean()  # == min(||p-q||², ||p+q||²)/2, invariant to q -> -q
-        self.log(f"{stage}_loss", loss)
-
-        with torch.no_grad():
-            rot_error = torch.rad2deg(2.0 * torch.acos(dot.abs().clamp(max=1.0)))  # 0–180°
-            self.log(f"{stage}_angular_error", rot_error.pow(2).mean().sqrt())
-            self.log(f"{stage}_angular_error_95th_percentile", torch.quantile(rot_error, 0.95))
-            self.log(f"{stage}_angular_error_std", rot_error.std())
-        return loss
 
 
 

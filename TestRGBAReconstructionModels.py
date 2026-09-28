@@ -17,6 +17,7 @@ from RGBAGridReconstruction import RGBAGridReconstruction
 import json
 
 checkpoints_folder = "RGBAGridReconstructionCheckpoints"
+#checkpoints_folder = "TempTests"
 
 dataset_loader = RepairDatasetLoader(batch_size=5, dataset_type="RGBAGridDataset",
                                          representation_folder_name="RGBAGrids", num_workers=3, data_dir="~/masters/datasets/")

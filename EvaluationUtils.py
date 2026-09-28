@@ -23,6 +23,8 @@ from RGBAGridReconstruction import RGBAGridReconstruction
 
 import math
 
+import lightning as L
+
 class TransformerEncoder(nn.Module):
     def __init__(self, transformer_layers=1, representation_size=128, nhead=16):
         super().__init__()
@@ -63,6 +65,7 @@ class Encoder(torch.nn.Module):
         self.embedding_size = 64
         self.batch_size = 32
         self.accumulate_grad_batches = 1
+        self.use_batch_norm = True
 
     def forward(self, batch):
         raise NotImplementedError
@@ -232,13 +235,13 @@ class MLPPositionalEncoding3D(nn.Module):
         # (1, Z, Y, X, 512)
         return pe.unsqueeze(0)
 
-class NoEncoder(nn.Module):
+class NoPositionalEncoder(nn.Module):
     def __init__(self):
         super().__init__()
     def forward(self, x):
         return torch.zeros_like(x)
 
-class RGBAGridEncoder(torch.nn.Module):
+class RGBAGridEncoder(Encoder):
     def __init__(self, model):
         super().__init__()
         self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset", "dualRotated" : "DualRandomRotationRGBAGridDataset"}
@@ -250,16 +253,7 @@ class RGBAGridEncoder(torch.nn.Module):
 
 
         lightning_model = RGBAGridReconstruction.load_from_checkpoint(f"{model}.ckpt", device=torch.device("cuda"))
-        positional_encoding = parameters[1]
-        if positional_encoding == "mlp":
-            self.positional_encoding = MLPPositionalEncoding3D()
-        elif positional_encoding == "sin":
-            self.positional_encoding = SinusoidalPositionalEncoding3D()
-        elif positional_encoding == "none":
-            self.positional_encoding = NoEncoder()
-        elif positional_encoding == "learned":
-            self.encoding_param = nn.Parameter(torch.zeros(1, 12, 12, 12, 256), requires_grad=True)
-            self.positional_encoding = lambda x : self.encoding_param
+
 
 
 
@@ -267,7 +261,22 @@ class RGBAGridEncoder(torch.nn.Module):
 
         self.model = lightning_model.model.encoder
         self.model = self.model.eval()
+
+        positional_encoding = parameters[1]
+        if positional_encoding == "mlp":
+            self.positional_encoding = MLPPositionalEncoding3D()
+        elif positional_encoding == "sin":
+            self.positional_encoding = SinusoidalPositionalEncoding3D()
+        elif positional_encoding == "none":
+            self.positional_encoding = NoPositionalEncoder()
+        elif positional_encoding == "learned":
+            self.encoding_param = nn.Parameter(torch.zeros(1, 12, 12, 12, self.embedding_size), requires_grad=True)
+            self.positional_encoding = lambda x: self.encoding_param
+
         del lightning_model
+
+
+
 
     def forward(self, batch):
         grid  = batch[0]
@@ -280,7 +289,86 @@ class RGBAGridEncoder(torch.nn.Module):
         return representation
 
 
-class RayEncoder(nn.Module):
+class PlainRGBAGrid(Encoder):
+    def __init__(self, model):
+        super().__init__()
+        self.dataloader = {"plain": "RGBAGridDataset", "rotated": "RandomRotationRGBAGridDataset",
+                           "dualRotated": "DualRandomRotationRGBAGridDataset"}
+        self.representation_folder_name = "RGBAGrids"
+        self.batch_size = 8
+        self.accumulate_grad_batches = 8
+        parameters = model.split("-")
+
+        positional_encoding = parameters[1]
+        if positional_encoding == "mlp":
+            self.positional_encoding = MLPPositionalEncoding3D()
+        elif positional_encoding == "sin":
+            self.positional_encoding = SinusoidalPositionalEncoding3D()
+        elif positional_encoding == "none":
+            self.positional_encoding = NoPositionalEncoder()
+        elif positional_encoding == "learned":
+            self.encoding_param = nn.Parameter(torch.zeros(1, 12, 12, 12, 512), requires_grad=True)
+            self.positional_encoding = lambda x: self.encoding_param
+
+        self.embedding_size = 512
+
+        self.mlp = nn.Sequential(nn.Linear(2048, 1024), nn.ReLU(), nn.Linear(1024, 512), nn.ReLU())
+
+    def forward(self, batch):
+        grid = batch[0]
+        grid = grid.view(grid.size(0), 12, 8, 12, 8, 12, 8, 4)
+        grid = grid.permute(0, 1, 3, 5, 2, 4, 6, 7)
+        grid =torch.reshape(grid, (grid.size(0), 12, 12, 12, -1))
+
+        representation = self.mlp(grid)
+
+        representation = representation + self.positional_encoding(representation)
+        representation = representation.view(representation.shape[0], -1, representation.shape[-1])
+
+        del grid
+        return representation
+
+
+class GridPoints(Encoder):
+    def __init__(self, model):
+        super().__init__()
+        self.dataloader = {"plain": "RGBAGridDataset", "rotated": "RandomRotationRGBAGridDataset",
+                           "dualRotated": "DualRandomRotationRGBAGridDataset"}
+        self.representation_folder_name = "RGBAGrids"
+
+        model = encoders[model]()
+        self.model = model
+
+        self.batch_size = 1
+        self.accumulate_grad_batches = 64
+        self.embedding_size = model.embedding_size
+
+        from torch_pointcloud.transforms import EstimateNormals
+        self.estimate_normals = EstimateNormals
+        self.use_batch_norm = False
+
+
+    def forward(self, batch):
+        grid = batch[0]
+
+        n = grid.shape[-1]  # grid resolution per axis
+        coords = torch.linspace(-17, 17, n)  # (n,) evenly spaced values
+
+        xx, yy, zz = torch.meshgrid(coords, coords, coords, indexing="ij")
+        coord_grid = torch.stack([xx, yy, zz], dim=-1).unsqueeze(0).expand(self.batch_size, -1, -1, -1, -1).to(grid.device)
+
+        mask = grid[:, 0] > 0.3
+
+        assert grid.shape[0] == 1
+        points = coord_grid[mask]
+        colours = torch.clamp(grid[:, 1:].permute(0, 2, 3, 4, 1)[mask] * 255, 0, 255).int()
+        normals = self.estimate_normals(keys="pos", normal_key="normal")({"pos":points})["normal"]
+
+        features = self.model((points.unsqueeze(0), normals.unsqueeze(0), colours.unsqueeze(0)))
+
+        return features
+
+class RayEncoder(Encoder):
     def __init__(self, model):
         super().__init__()
         self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset"}
@@ -297,7 +385,52 @@ class RayEncoder(nn.Module):
         elif positional_encoding == "sin":
             self.positional_encoding = SinusoidalPositionalEncoding3D()
         elif positional_encoding == "none":
-            self.positional_encoding = NoEncoder()
+            self.positional_encoding = NoPositionalEncoder()
+
+class EM3FEncoder(Encoder):
+    def __init__(self):
+        super().__init__()
+        self.embedding_size = 64
+        self.dataloader = {"plain": "PointCloudDatasetDataloader", "rotated": "RandomRotationPointCloudsDataloader",
+                           "dualRotated": "RandomDualRotationPointCloudsDataloader"}
+        self.representation_folder_name = "pointclouds2_5k"
+        self.batch_size = 8
+        self.accumulate_grad_batches = 8
+
+        import hydra
+        from hydra import initialize, compose
+        with initialize(config_path="em3rf/configs"):
+            cfg = compose(config_name="eval.yaml", overrides=["experiment=denoiser_flow_matching"])
+            model: L.LightningModule = hydra.utils.instantiate(cfg.get("model"))
+
+            state_dict = torch.load("E-M3RFfinal.pth", map_location="cpu", weights_only=False)["state_dict"]
+            model.load_state_dict(state_dict)
+            self.model = model.feature_extractor.eval()
+
+    def forward(self, batch, visualise=False):
+        points, normals, colors, *extra_args = batch
+
+        B, n_points, _ = batch[0].shape
+        features = None
+        for i in range(B):
+            with torch.inference_mode():
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=False):
+                    # Pass the color into the encoder dictionary
+                    _, encoder_out_dict = self.model.encoder(
+                        {
+                            "coord": points[i],
+                            "offset": torch.tensor([points.shape[1]]),
+                            "feat": torch.cat([points[i], normals[i]], dim=-1),
+                            "color": (colors[i].float() / 127.5) - 1.0,  # Added color here
+                            "grid_size": torch.tensor(self.model.grid_size).to(points.device),
+                        }
+                    )
+                    model_out = encoder_out_dict["feat"]
+            if features is None:
+                features = torch.zeros(B, n_points, self.embedding_size).to(batch[0].device)
+            features[i] = model_out
+            del model_out
+        return features
 
 class PointEncoder(Encoder):
     def __init__(self):
@@ -309,7 +442,7 @@ class PointEncoder(Encoder):
         self.dataloader = {"plain": "PointCloudDatasetDataloader", "rotated" : "RandomRotationPointCloudsDataloader", "dualRotated" : "RandomDualRotationPointCloudsDataloader"}
         self.representation_folder_name = "pointclouds2_5k"
         self.batch_size = 16
-        self.accumulate_grad_batches = 2
+        self.accumulate_grad_batches = 4
 
     def package_pointcloud(self, batch):
         data =  [{"pos": batch[0][i] * 10, "normal": batch[1][i], "color": batch[2][i]} for i in range(batch[0].shape[0])] #
@@ -514,4 +647,4 @@ class KPConv(PointEncoder):
 
 
 
-encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder}
+encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3FEncoder" : EM3FEncoder, "GridPoints" : GridPoints}

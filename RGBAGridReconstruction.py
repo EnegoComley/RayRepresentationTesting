@@ -343,7 +343,7 @@ class RayManager(nn.Module):
         return rgb_map
 
 class RGBAGridReconstructionNetwork(nn.Module):
-    def __init__(self, scale=1, downsamples = 3, no_batch_norm = False, channel_size= 4, split_model = False, fusion_model = False):
+    def __init__(self, scale=2, downsamples = 3, no_batch_norm = False, channel_size= 4, split_model = False, fusion_model = False):
         super().__init__()
         if fusion_model:
             split_model = True

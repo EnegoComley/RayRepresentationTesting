@@ -115,7 +115,8 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
             "data_dir": self.representation_data_dir,
             "pieces_to_puzzles": self.pieces_to_puzzles,
             #"latent2representation": self.latent2representation,
-            "kwargs": kwargs
+            "kwargs": kwargs,
+            "overfit": overfit,
                                   }
 
 class RayRepairDatasetDataloader(RepairDatasetLoader):
@@ -196,17 +197,36 @@ class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloade
         kwargs = dataset_info_dict["kwargs"]
         self.angle_divider = kwargs["angle_divider"]
 
-    def __getitem__(self, idx):
+        if dataset_info_dict["overfit"]:
+            self.overfit = True
+            self.r1 = Rotation.identity()
+            self.r2 = Rotation.random() ** (1/self.angle_divider)
+        else:
+            self.overfit = False
+
+        # REMOVE THE OVERFIT FUNCTIONALITY FOR FORCING THE SAME ANGLE
+        #self.overfit = False
+
+
+    def __getitem__(self, idx, random_rotation=None, random_rotation2=None):
         piece_name = self.piece_names[idx]
 
         # Randomly generate a 3D rotation
-        random_rotation = Rotation.random()
-        random_rotation2 = Rotation.random() ** (1/self.angle_divider)
+
+        if self.overfit:
+            random_rotation = self.r1
+            random_rotation2 = self.r2
+            #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
+
+        else:
+            random_rotation = Rotation.random() if random_rotation is None else random_rotation
+            random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
+
         points, normals, colors = self.load_pointcloud(piece_name)
         points, normals = self.rotate_pointcloud(points, normals, random_rotation)
         points2, normals2 = self.rotate_pointcloud(points, normals, random_rotation2)
 
-        rotation = torch.from_numpy(random_rotation2.as_quat()).to(dtype=torch.float32)
+        rotation = torch.from_numpy(random_rotation2.as_quat(canonical=True)).float()  # w >= 0
 
         return (points, normals, colors), (points2, normals2, colors), rotation
 
@@ -359,34 +379,72 @@ class RGBAGridDataset(InterpolatableGridDataset):
         return grid, opacity_multiplier
 
 class RandomRotationRGBAGridDataset(RGBAGridDataset):
-    def rotate_grid(self, grid_to_rotate, rotation):
-        rotated_grid = torch.zeros_like(grid_to_rotate).permute(1, 2, 3, 0)
+    #def rotate_grid(self, grid_to_rotate, rotation):
+    #    rotated_grid = torch.zeros_like(grid_to_rotate).permute(1, 2, 3, 0)
 
-        axis = torch.linspace(-1, 1, grid_to_rotate.shape[-1])
-        x, y, z = torch.meshgrid(axis, axis, axis, indexing='ij')
-        cord_grid = torch.stack((x, y, z), dim=-1)
-        inverse_rotation = torch.tensor(rotation.inv().as_matrix(), dtype=torch.float32)
-        cord_grid = cord_grid @ inverse_rotation.T
+    #    axis = torch.linspace(-1, 1, grid_to_rotate.shape[-1])
+    #    x, y, z = torch.meshgrid(axis, axis, axis, indexing='ij')
+    #    cord_grid = torch.stack((x, y, z), dim=-1)
+    #    inverse_rotation = torch.tensor(rotation.inv().as_matrix(), dtype=torch.float32)
+    #    cord_grid = cord_grid @ inverse_rotation.T
 
         # Get the set of cords within the -1 to 1 range
-        mask = (cord_grid >= -1) & (cord_grid <= 1)
-        mask = mask.all(dim=-1)
+    #    mask = (cord_grid >= -1) & (cord_grid <= 1)
+    #    mask = mask.all(dim=-1)
 
-        cords_to_sample = cord_grid[mask]
+    #    cords_to_sample = cord_grid[mask]
 
-        sample_grid = cords_to_sample.reshape(1, 1, -1, 1, 3)
+    #    sample_grid = cords_to_sample.reshape(1, 1, -1, 1, 3)
 
-        sampled = F.grid_sample(
-            grid_to_rotate.unsqueeze(0),
-            sample_grid,
-            mode='bilinear',
-            align_corners=True
-        )
+    #    sampled = F.grid_sample(
+    #        grid_to_rotate.unsqueeze(0),
+    #        sample_grid,
+    #        mode='bilinear',
+    #        align_corners=True
+    #    )
 
         # (1, 4, 1, N, 1) -> (N, 4)
-        sampled = sampled[0, :, 0, :, 0].T
-        rotated_grid[mask] = sampled
-        return rotated_grid.permute(3, 0, 1, 2)
+    #    sampled = sampled[0, :, 0, :, 0].T
+    #    rotated_grid[mask] = sampled
+    #    return rotated_grid.permute(3, 0, 1, 2)
+    def rotate_grid(self, grid_to_rotate, rotation):
+        C, D, H, W = grid_to_rotate.shape
+
+        # Coordinates corresponding to the tensor dimensions:
+        # D -> z, H -> y, W -> x
+        z_axis = torch.linspace(-1, 1, D, device=grid_to_rotate.device)
+        y_axis = torch.linspace(-1, 1, H, device=grid_to_rotate.device)
+        x_axis = torch.linspace(-1, 1, W, device=grid_to_rotate.device)
+
+        z, y, x = torch.meshgrid(
+            z_axis, y_axis, x_axis, indexing='ij'
+        )
+
+        # Last dimension is explicitly (x, y, z)
+        coord_grid = torch.stack((x, y, z), dim=-1)
+
+        inverse_rotation = torch.as_tensor(
+            rotation.inv().as_matrix(),
+            dtype=grid_to_rotate.dtype,
+            device=grid_to_rotate.device,
+        )
+
+        # Apply inverse rotation to output coordinates
+        coord_grid = coord_grid @ inverse_rotation.T
+
+        # grid_sample can handle out-of-bounds coordinates itself,
+        # using zeros by default.
+        sample_grid = coord_grid.unsqueeze(0)  # (1, D, H, W, 3)
+
+        sampled = F.grid_sample(
+            grid_to_rotate.unsqueeze(0),  # (1, C, D, H, W)
+            sample_grid,
+            mode='bilinear',
+            padding_mode='zeros',
+            align_corners=True,
+        )
+
+        return sampled.squeeze(0)
 
     def __getitem__(self, idx):
         piece_name = self.piece_names[idx]
@@ -399,17 +457,24 @@ class RandomRotationRGBAGridDataset(RGBAGridDataset):
 
         return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_name, torch.tensor(random_rotation.as_matrix(), dtype=torch.float32)
 
-class DualRandomRotationRGBAGridDataset(RGBAGridDataset):
-    def __getitem__(self, idx):
+class DualRandomRotationRGBAGridDataset(RandomRotationRGBAGridDataset):
+    def __init__(self, split_dict, dataset_info_dict):
+        super().__init__(split_dict, dataset_info_dict)
+        kwargs = dataset_info_dict["kwargs"]
+        self.angle_divider = kwargs["angle_divider"]
+
+    def __getitem__(self, idx, random_rotation=None, random_rotation2=None):
         piece_name = self.piece_names[idx]
 
-        random_rotation = Rotation.random()
-        random_rotation2 = Rotation.random()# ** (1/3)
+        random_rotation = Rotation.random() if random_rotation is None else random_rotation
+        random_rotation2 = Rotation.random()  ** (1/self.angle_divider) if random_rotation2 is None else random_rotation2
         grid, opacity_multiplier = self.load_grid_representation(piece_name)
-        grid = self.rotate_grid(grid, random_rotation)
-        grid2 = self.rotate_grid(grid, random_rotation2)
+        grid1 = self.rotate_grid(grid.clone(), random_rotation)
+        grid2 = self.rotate_grid(grid.clone(), random_rotation2 * random_rotation)
 
-        return (grid, opacity_multiplier, piece_name), (grid2, opacity_multiplier, piece_name), torch.tensor(random_rotation2.as_quat(), dtype=torch.float32)
+        rotation = torch.from_numpy(random_rotation2.as_quat(canonical=True)).float()  # w >= 0
+
+        return (grid1, opacity_multiplier, piece_name), (grid2, opacity_multiplier, piece_name), rotation
 
 class DataLoadingRayManager():#RayManager):
     def __init__(self, dtype=torch.float32):

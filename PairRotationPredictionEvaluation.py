@@ -45,6 +45,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=1e-3, help='Initial learning rate')
     parser.add_argument('--nPoints', type=int, default=2500, help='Number of points to sample')
     parser.add_argument('--nOverfit', type=int, default=-1, help='Number of points to sample')
+    parser.add_argument("--unfreeze", action='store_true', help="Learn the encoders")
     #parser.add_argument("--param_test", action='store_true', help="Run parameter test")
 
 
@@ -966,6 +967,8 @@ if __name__ == "__main__":
         run_name += f"_lr={args.lr}"
     if args.nOverfit != -1:
         run_name = f"nOverfit={args.nOverfit}_" + run_name
+    if args.unfreeze:
+        run_name += f"_unfreeze"
 
 
 

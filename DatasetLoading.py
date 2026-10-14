@@ -10,6 +10,9 @@ from typing import Iterable, List, Tuple, Union
 import torch.nn.functional as F
 import random
 
+import shutil
+import tarfile
+
 from NerfRepresentationUtils import ColourPredictionPredictionNetwork
 
 import itertools
@@ -50,7 +53,7 @@ class PuzzleDatasetLoader(L.LightningDataModule):
         return self.get_dataloader(self.test_split_dict)
 
 class RepairDatasetLoader(PuzzleDatasetLoader):
-    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name = "Rays5K", fracture_representation_folder_name = "FractureRays5K", num_workers=14, overfit=False, nOverfit=-1, **kwargs):
+    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name = "Rays5K", fracture_representation_folder_name = "FractureRays5K", num_workers=14, overfit=False, nOverfit=-1, ncc=False, **kwargs):
         super().__init__(batch_size=batch_size, dataset_type=dataset_type, num_workers=num_workers)
         self.original_datadir = os.path.expanduser(data_dir + "RePAIR/")
 
@@ -119,6 +122,10 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
         #self.latent2representation.load_state_dict(torch.load("TensoRFColourPrediction.pth"))
         #self.latent2representation.eval()
 
+        if ncc:
+            self.representation_data_dir = self.move_ncc_data()
+
+
         self.dataset_info_dict = {
             "puzzle_to_pieces": self.puzzle_to_pieces,
             "data_dir": self.representation_data_dir,
@@ -127,6 +134,47 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
             "kwargs": kwargs,
             "overfit": overfit or  nOverfit != -1,
                                   }
+
+    def move_ncc_data(self):
+
+        # Compressed dataset archive
+        archive_path = self.representation_data_dir + ".tar.xz"
+
+        # Temporary directory on the compute node
+        tmp_dir = os.environ.get("TMPDIR", "/tmp")
+
+        # Destination directory for the extracted dataset
+        local_representation_data_dir = os.path.join(
+            tmp_dir,
+            os.path.basename(self.representation_data_dir)
+        )
+
+        # Copy and extract the dataset
+        if not os.path.exists(local_representation_data_dir):
+            print(f"Copying dataset archive to {tmp_dir}...")
+
+            local_archive_path = os.path.join(
+                tmp_dir,
+                os.path.basename(archive_path)
+            )
+
+            shutil.copy2(archive_path, local_archive_path)
+
+            print("Extracting dataset...")
+
+            with tarfile.open(local_archive_path, "r:xz") as tar:
+                tar.extractall(path=tmp_dir, filter="data")
+
+            print(f"Dataset extracted to: {local_representation_data_dir}")
+
+            # Remove the compressed archive from temporary storage
+            os.remove(local_archive_path)
+
+        else:
+            print(f"Dataset already exists at {local_representation_data_dir}")
+
+        # Use this path for the rest of your training code
+        return local_representation_data_dir
 
 class RayRepairDatasetDataloader(RepairDatasetLoader):
     def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name="Rays5K",

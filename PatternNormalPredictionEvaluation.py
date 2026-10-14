@@ -34,6 +34,7 @@ if __name__ == "__main__":
     parser.add_argument('--model', type=str, default="PTV3", help='The model to be evaluated')
     parser.add_argument('--ncc', action='store_true', help='Running on the NCC?')
     parser.add_argument("--no_logger", action='store_true', help="Disable logging to Weights and Biases")
+    parser.add_argument("--unfreeze", action='store_true', help="Learn the encoders")
 
 
 
@@ -124,12 +125,14 @@ if __name__ == "__main__":
 
     datasets_path = data_dir = "~/masters/datasets/" if args.ncc else "~/Documents/masters/datasets/"
 
-    encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1]) if "_" in args.model else encoders[args.model]()
+    encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1], not args.unfreeze) if "_" in args.model else encoders[args.model](not args.unfreeze)
     dataset_loader = RepairDatasetLoader(batch_size=encoder.batch_size, dataset_type=encoder.dataloader["rotated"],
                                          representation_folder_name=encoder.representation_folder_name, num_workers=3, data_dir=datasets_path, ncc=args.ncc)
     L.seed_everything(42)
 
     run_name = f"{args.model}"
+    if args.unfreeze:
+        run_name += "_unfrozen"
 
 
     wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='PatternNormalPredictionEvaluation')

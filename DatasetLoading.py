@@ -122,8 +122,8 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
         #self.latent2representation.load_state_dict(torch.load("TensoRFColourPrediction.pth"))
         #self.latent2representation.eval()
 
-        if ncc:
-            self.representation_data_dir = self.move_ncc_data()
+        #if ncc:
+            #self.representation_data_dir = self.move_ncc_data()
 
 
         self.dataset_info_dict = {

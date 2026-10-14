@@ -25,6 +25,9 @@ import math
 
 import lightning as L
 
+from contextlib import nullcontext
+
+
 class TransformerEncoder(nn.Module):
     def __init__(self, transformer_layers=1, representation_size=128, nhead=16, latent_size=512):
         super().__init__()
@@ -58,7 +61,7 @@ def show_point_cloud(pos, color=None, *, ax=None, title=None, size=1, cmap="viri
     return ax
 
 class Encoder(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, freeze_grad):
         super().__init__()
         self.dataloader = {}
         self.representation_folder_name = ""
@@ -67,6 +70,7 @@ class Encoder(torch.nn.Module):
         self.learned_batch_size = 64
         self.accumulate_grad_batches = 1
         self.use_batch_norm = True
+        self.freeze_grad = freeze_grad
 
     def forward(self, batch):
         raise NotImplementedError
@@ -243,8 +247,8 @@ class NoPositionalEncoder(nn.Module):
         return torch.zeros_like(x)
 
 class RGBAGridEncoder(Encoder):
-    def __init__(self, model):
-        super().__init__()
+    def __init__(self, model, freeze_grad=True):
+        super().__init__(freeze_grad)
         self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset", "dualRotated" : "DualRandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
         parameters = model.split("-")
@@ -259,7 +263,8 @@ class RGBAGridEncoder(Encoder):
         self.embedding_size = lightning_model.scale * 128
 
         self.model = lightning_model.model.encoder
-        self.model = self.model.eval()
+        if freeze_grad:
+            self.model = self.model.eval()
 
         positional_encoding = parameters[1]
         if positional_encoding == "mlp":
@@ -279,7 +284,7 @@ class RGBAGridEncoder(Encoder):
 
     def forward(self, batch):
         grid  = batch[0]
-        with torch.inference_mode():
+        with torch.inference_mode() if self.freeze_grad else nullcontext():
             representation = self.model(grid)
             representation = representation.permute(0, 2, 3, 4, 1)  # (B, C, Z, Y, X) -> (B, Z, Y, X, C)
         representation = representation + self.positional_encoding(representation)
@@ -289,8 +294,8 @@ class RGBAGridEncoder(Encoder):
 
 
 class PlainRGBAGrid(Encoder):
-    def __init__(self, model):
-        super().__init__()
+    def __init__(self, model, freeze_grad=True):
+        super().__init__(freeze_grad)
         self.dataloader = {"plain": "RGBAGridDataset", "rotated": "RandomRotationRGBAGridDataset",
                            "dualRotated": "DualRandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
@@ -327,8 +332,8 @@ class PlainRGBAGrid(Encoder):
 
 
 class GridPoints(Encoder):
-    def __init__(self, model):
-        super().__init__()
+    def __init__(self, model, freeze_grad=True):
+        super().__init__(freeze_grad)
         self.dataloader = {"plain": "RGBAGridDataset", "rotated": "RandomRotationRGBAGridDataset",
                            "dualRotated": "DualRandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
@@ -364,8 +369,8 @@ class GridPoints(Encoder):
         return features
 
 class RayEncoder(Encoder):
-    def __init__(self, model):
-        super().__init__()
+    def __init__(self, model, freeze_grad=True):
+        super().__init__(freeze_grad)
         self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
         parameters = model.split("-")
@@ -381,8 +386,8 @@ class RayEncoder(Encoder):
             self.positional_encoding = NoPositionalEncoder()
 
 class EM3FEncoder(Encoder):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, freeze_grad=True):
+        super().__init__(freeze_grad)
         self.embedding_size = 64
         self.dataloader = {"plain": "PointCloudDatasetDataloader", "rotated": "RandomRotationPointCloudsDataloader",
                            "dualRotated": "RandomDualRotationPointCloudsDataloader"}
@@ -396,7 +401,9 @@ class EM3FEncoder(Encoder):
 
             state_dict = torch.load("E-M3RFfinal.pth", map_location="cpu", weights_only=False)["state_dict"]
             model.load_state_dict(state_dict)
-            self.model = model.feature_extractor.eval()
+            self.model = model.feature_extractor
+            if self.freeze_grad:
+                self.model = self.model.eval()
 
     def forward(self, batch, visualise=False):
         points, normals, colors, *extra_args = batch
@@ -404,7 +411,7 @@ class EM3FEncoder(Encoder):
         B, n_points, _ = batch[0].shape
         features = None
         for i in range(B):
-            with torch.inference_mode():
+            with torch.inference_mode() if self.freeze_grad else nullcontext():
                 with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=False):
                     # Pass the color into the encoder dictionary
                     _, encoder_out_dict = self.model.encoder(
@@ -424,8 +431,8 @@ class EM3FEncoder(Encoder):
         return features
 
 class PointEncoder(Encoder):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, freeze_grad):
+        super().__init__(freeze_grad)
         self.embedding_size = 64
         #self.model = lambda transformed_data : torch.zeros(self.embedding_size)
         self.transform = lambda x : x
@@ -444,7 +451,7 @@ class PointEncoder(Encoder):
         for i in range(B):
             packaged_data = self.package_pointcloud([x[i:i+1] for x in batch])
             transformed_data = self.transform(packaged_data)
-            with torch.inference_mode():
+            with torch.inference_mode() if self.freeze_grad else nullcontext():
                 model_out = self.model(transformed_data)
                 features[i] = model_out
                 if visualise:
@@ -489,8 +496,8 @@ class PointTransformerV3(PointEncoder):
         )
         return features[transformed_data["inverse"]]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, freeze_grad=True):
+        super().__init__(freeze_grad)
         tp_model, info = tp.create_model(
             "ptv3-base.s3dis-area5.pointcept",
             task="segmentation",
@@ -498,7 +505,9 @@ class PointTransformerV3(PointEncoder):
             num_classes=0,
             return_info=True
         )
-        self.tp_model = tp_model.eval().to(torch.device("cuda:0"))
+        self.tp_model = tp_model.to(torch.device("cuda:0"))
+        if self.freeze_grad:
+            self.tp_model = self.tp_model.eval()
         self.model = self.model_func
         self.transform = info["transform"]
         self.embedding_size = 64
@@ -520,8 +529,8 @@ class PointNet2(PointEncoder):
         )
         return features
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, freeze_grad=True):
+        super().__init__(freeze_grad)
         tp_model, info = tp.create_model(
             "pointnet2.s3dis-area5.openpoints",
             task="segmentation",
@@ -529,7 +538,9 @@ class PointNet2(PointEncoder):
             num_classes=0,
             return_info=True
         )
-        self.tp_model = tp_model.eval().to(torch.device("cuda:0"))
+        self.tp_model = tp_model.to(torch.device("cuda:0"))
+        if self.freeze_grad:
+            self.tp_model = self.tp_model.eval()
         self.model = self.model_func
         self.transform = info["transform"]
         self.embedding_size = 128
@@ -550,8 +561,8 @@ class PointNextxl(PointEncoder):
         )
         return features[transformed_data["inverse"]]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, freeze_grad=True):
+        super().__init__(freeze_grad)
         tp_model, info = tp.create_model(
             "pointnext-xl.s3dis-area5.openpoints",
             task="segmentation",
@@ -559,7 +570,9 @@ class PointNextxl(PointEncoder):
             num_classes=0,
             return_info=True
         )
-        self.tp_model = tp_model.eval().to(torch.device("cuda:0"))
+        self.tp_model = tp_model.to(torch.device("cuda:0"))
+        if self.freeze_grad:
+            self.tp_model = self.tp_model.eval()
         self.model = self.model_func
         self.transform = info["transform"]
         self.embedding_size = 64
@@ -580,8 +593,8 @@ class Sonata(PointEncoder):
         )
         return features[transformed_data["inverse"]]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, freeze_grad=True):
+        super().__init__(freeze_grad)
         tp_model, info = tp.create_model(
             "sonata-lp.scannet20.fair",
             task="segmentation",
@@ -589,7 +602,9 @@ class Sonata(PointEncoder):
             num_classes=0,
             return_info=True
         )
-        self.tp_model = tp_model.eval().to(torch.device("cuda:0"))
+        self.tp_model = tp_model.to(torch.device("cuda:0"))
+        if self.freeze_grad:
+            self.tp_model = self.tp_model.eval()
         self.model = self.model_func
         self.transform = info["transform"]
         self.embedding_size = 1232
@@ -612,8 +627,8 @@ class KPConv(PointEncoder):
         )
         return features[transformed_data["inverse"]]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, freeze_grad=True):
+        super().__init__(freeze_grad)
         tp_model, info = tp.create_model(
             "kpfcnn-base.s3dis.hugues-thomas",
             task="segmentation",

@@ -126,7 +126,7 @@ if __name__ == "__main__":
 
     encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1]) if "_" in args.model else encoders[args.model]()
     dataset_loader = RepairDatasetLoader(batch_size=encoder.batch_size, dataset_type=encoder.dataloader["rotated"],
-                                         representation_folder_name=encoder.representation_folder_name, num_workers=3, data_dir=datasets_path)
+                                         representation_folder_name=encoder.representation_folder_name, num_workers=3, data_dir=datasets_path, ncc=args.ncc)
     L.seed_everything(42)
 
     run_name = f"{args.model}"

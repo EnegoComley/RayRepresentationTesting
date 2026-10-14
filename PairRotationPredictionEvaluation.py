@@ -954,7 +954,7 @@ if __name__ == "__main__":
         batch_size = min(batch_size, args.nOverfit)
 
     dataset_loader = RepairDatasetLoader(batch_size=batch_size, dataset_type=encoder.dataloader["dualRotated"],
-                                         representation_folder_name=encoder.representation_folder_name, num_workers=8, data_dir=datasets_path, angle_divider=args.angle_divider, overfit=args.overfit, nOverfit=args.nOverfit, **dataset_kwargs)
+                                         representation_folder_name=encoder.representation_folder_name, num_workers=8, data_dir=datasets_path, angle_divider=args.angle_divider, overfit=args.overfit, nOverfit=args.nOverfit, ncc=args.ncc, **dataset_kwargs)
     L.seed_everything(42)
 
     run_name = f"{args.model}"

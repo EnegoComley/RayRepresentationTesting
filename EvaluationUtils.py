@@ -26,11 +26,11 @@ import math
 import lightning as L
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, transformer_layers=1, representation_size=128, nhead=16):
+    def __init__(self, transformer_layers=1, representation_size=128, nhead=16, latent_size=512):
         super().__init__()
 
-        self.initial_layer = nn.Sequential(nn.Linear(representation_size, 512), nn.ReLU())
-        transformer_layer = nn.TransformerEncoderLayer(d_model=512, nhead=nhead, dropout=0.3, batch_first=True)
+        self.initial_layer = nn.Sequential(nn.Linear(representation_size, latent_size), nn.ReLU())
+        transformer_layer = nn.TransformerEncoderLayer(d_model=latent_size, nhead=nhead, dropout=0.3, batch_first=True)
         self.transformer = nn.TransformerEncoder(transformer_layer, num_layers=transformer_layers)
 
 
@@ -63,7 +63,8 @@ class Encoder(torch.nn.Module):
         self.dataloader = {}
         self.representation_folder_name = ""
         self.embedding_size = 64
-        self.batch_size = 32
+        self.batch_size = 4
+        self.learned_batch_size = 64
         self.accumulate_grad_batches = 1
         self.use_batch_norm = True
 
@@ -246,8 +247,6 @@ class RGBAGridEncoder(Encoder):
         super().__init__()
         self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset", "dualRotated" : "DualRandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
-        self.batch_size = 4
-        self.accumulate_grad_batches = 16
         parameters = model.split("-")
         model = parameters[0]
 
@@ -272,10 +271,10 @@ class RGBAGridEncoder(Encoder):
         elif positional_encoding == "learned":
             self.encoding_param = nn.Parameter(torch.zeros(1, 12, 12, 12, self.embedding_size), requires_grad=True)
             self.positional_encoding = lambda x: self.encoding_param
+        else:
+            raise ValueError(f"Unknown positional encoding: {positional_encoding}")
 
         del lightning_model
-
-
 
 
     def forward(self, batch):
@@ -295,8 +294,6 @@ class PlainRGBAGrid(Encoder):
         self.dataloader = {"plain": "RGBAGridDataset", "rotated": "RandomRotationRGBAGridDataset",
                            "dualRotated": "DualRandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
-        self.batch_size = 8
-        self.accumulate_grad_batches = 8
         parameters = model.split("-")
 
         positional_encoding = parameters[1]
@@ -339,8 +336,6 @@ class GridPoints(Encoder):
         model = encoders[model]()
         self.model = model
 
-        self.batch_size = 1
-        self.accumulate_grad_batches = 64
         self.embedding_size = model.embedding_size
 
         from torch_pointcloud.transforms import EstimateNormals
@@ -373,8 +368,6 @@ class RayEncoder(Encoder):
         super().__init__()
         self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
-        self.batch_size = 2
-        self.accumulate_grad_batches = 4
         parameters = model.split("-")
         model = parameters[0]
 
@@ -394,8 +387,6 @@ class EM3FEncoder(Encoder):
         self.dataloader = {"plain": "PointCloudDatasetDataloader", "rotated": "RandomRotationPointCloudsDataloader",
                            "dualRotated": "RandomDualRotationPointCloudsDataloader"}
         self.representation_folder_name = "pointclouds2_5k"
-        self.batch_size = 8
-        self.accumulate_grad_batches = 8
 
         import hydra
         from hydra import initialize, compose
@@ -441,8 +432,6 @@ class PointEncoder(Encoder):
         self.transformed_origin_pos_name = "NONE"
         self.dataloader = {"plain": "PointCloudDatasetDataloader", "rotated" : "RandomRotationPointCloudsDataloader", "dualRotated" : "RandomDualRotationPointCloudsDataloader"}
         self.representation_folder_name = "pointclouds2_5k"
-        self.batch_size = 16
-        self.accumulate_grad_batches = 4
 
     def package_pointcloud(self, batch):
         data =  [{"pos": batch[0][i] * 10, "normal": batch[1][i], "color": batch[2][i]} for i in range(batch[0].shape[0])] #

@@ -4,13 +4,16 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 from scipy.spatial.transform import Rotation
+from scipy.optimize import brentq
 import lightning as L
 from typing import Iterable, List, Tuple, Union
 import torch.nn.functional as F
+import random
 
 from NerfRepresentationUtils import ColourPredictionPredictionNetwork
 
 import itertools
+
 
 #from RGBAGridReconstruction import RayManager
 
@@ -47,7 +50,7 @@ class PuzzleDatasetLoader(L.LightningDataModule):
         return self.get_dataloader(self.test_split_dict)
 
 class RepairDatasetLoader(PuzzleDatasetLoader):
-    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name = "Rays5K", fracture_representation_folder_name = "FractureRays5K", num_workers=14, overfit=False, **kwargs):
+    def __init__(self, batch_size, dataset_type, data_dir="~/Documents/masters/datasets/", representation_folder_name = "Rays5K", fracture_representation_folder_name = "FractureRays5K", num_workers=14, overfit=False, nOverfit=-1, **kwargs):
         super().__init__(batch_size=batch_size, dataset_type=dataset_type, num_workers=num_workers)
         self.original_datadir = os.path.expanduser(data_dir + "RePAIR/")
 
@@ -101,6 +104,12 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
             self.test_pieces = ['RPf_00347.npz']
             self.train_pieces = ['RPf_00347.npz']
             self.val_pieces = ['RPf_00347.npz']
+        elif nOverfit != -1:
+            random.shuffle(self.train_pieces)
+            self.train_pieces = self.train_pieces[:nOverfit]
+            self.val_pieces = self.train_pieces
+            self.test_pieces = self.train_pieces
+
 
         self.test_split_dict = {"puzzles": self.puzzle_test_split, "pieces": self.test_pieces}
         self.train_split_dict = {"puzzles": self.puzzle_train_split, "pieces": self.train_pieces}
@@ -116,7 +125,7 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
             "pieces_to_puzzles": self.pieces_to_puzzles,
             #"latent2representation": self.latent2representation,
             "kwargs": kwargs,
-            "overfit": overfit,
+            "overfit": overfit or  nOverfit != -1,
                                   }
 
 class RayRepairDatasetDataloader(RepairDatasetLoader):
@@ -141,6 +150,9 @@ class PointCloudDatasetDataloader(RepairDatasetLoader):
     def __init__(self, split_dict, dataset_info_dict):
         self.piece_names = split_dict["pieces"]
         self.representation_data_dir = dataset_info_dict["data_dir"]
+
+        kwargs = dataset_info_dict["kwargs"]
+        self.n_points = kwargs["n_points"] if "n_points" in kwargs else 2500
 
     def __len__(self):
         return len(self.piece_names)
@@ -169,7 +181,15 @@ class PointCloudDatasetDataloader(RepairDatasetLoader):
         #colors = colors / 255.0
         from torch_pointcloud.transforms import Shift
 
+
         points = Shift(keys="pos", method="bbox", axes=[0, 1, 2])({"pos":points})["pos"]
+
+        if self.n_points != 2500:
+            from torch_pointcloud.transforms import FarthestPointSample
+            point_dict = FarthestPointSample(pos_key="pos", keys=["normals", "colors"], num_samples=self.n_points, )({"pos":points, "normals":normals, "colors":colors})
+            points = point_dict["pos"]
+            normals = point_dict["normals"]
+            colors = point_dict["colors"]
 
         return points, normals, colors
 
@@ -197,16 +217,41 @@ class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloade
         kwargs = dataset_info_dict["kwargs"]
         self.angle_divider = kwargs["angle_divider"]
 
+
         if dataset_info_dict["overfit"]:
             self.overfit = True
             self.r1 = Rotation.identity()
             self.r2 = Rotation.random() ** (1/self.angle_divider)
+            self.rotations = [Rotation.from_euler('xyz', [15, 0, 0], degrees=True), Rotation.from_euler('xyz', [0, 30, 0], degrees=True), Rotation.from_euler('xyz', [0, 0, 30], degrees=True), Rotation.from_euler('xyz', [-30, 0, 0], degrees=True), Rotation.from_euler('xyz', [0, -30, 0], degrees=True), Rotation.from_euler('xyz', [0, 0, -30], degrees=True)]
         else:
             self.overfit = False
 
         # REMOVE THE OVERFIT FUNCTIONALITY FOR FORCING THE SAME ANGLE
         #self.overfit = False
 
+    def random_rotation_ball(self, n=1):
+        max_angle = np.pi / self.angle_divider
+        # Uniform random axes
+        axis = np.random.normal(size=(n, 3))
+        axis /= np.linalg.norm(axis, axis=1, keepdims=True)
+
+        # Uniform random volume in SO(3)
+        u = np.random.uniform(0, 1, size=n)
+
+        target = u * (max_angle - np.sin(max_angle))
+
+        angles = np.array([
+            brentq(
+                lambda theta: theta - np.sin(theta) - t,
+                0,
+                max_angle
+            )
+            for t in target
+        ])
+
+        rotvecs = axis * angles[:, None]
+
+        return Rotation.from_rotvec(rotvecs)
 
     def __getitem__(self, idx, random_rotation=None, random_rotation2=None):
         piece_name = self.piece_names[idx]
@@ -215,20 +260,30 @@ class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloade
 
         if self.overfit:
             random_rotation = self.r1
-            random_rotation2 = self.r2
+            #random_rotation2 = self.r2
             #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
+            #import random
+            #random_rotation2 = random.choice(self.rotations)
+            random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
 
         else:
             random_rotation = Rotation.random() if random_rotation is None else random_rotation
-            random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
+            #random_rotation = self.r1
+
+            #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
+            random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
 
         points, normals, colors = self.load_pointcloud(piece_name)
-        points, normals = self.rotate_pointcloud(points, normals, random_rotation)
-        points2, normals2 = self.rotate_pointcloud(points, normals, random_rotation2)
+        points1, normals1 = self.rotate_pointcloud(points, normals, random_rotation)
+        points2, normals2 = self.rotate_pointcloud(points, normals, random_rotation2 * random_rotation)
 
         rotation = torch.from_numpy(random_rotation2.as_quat(canonical=True)).float()  # w >= 0
+        #rotation = torch.from_numpy(random_rotation2.as_euler('zxy', degrees=True)).float()  # w >= 0
 
-        return (points, normals, colors), (points2, normals2, colors), rotation
+        #obj_rot1 = torch.from_numpy(random_rotation.as_matrix()).float()
+        #obj_rot2 = torch.from_numpy((random_rotation2 * random_rotation).as_matrix()).float()
+
+        return (points1, normals1, colors), (points2, normals2, colors), rotation
 
 
 class GridDataset(Dataset):
@@ -463,11 +518,57 @@ class DualRandomRotationRGBAGridDataset(RandomRotationRGBAGridDataset):
         kwargs = dataset_info_dict["kwargs"]
         self.angle_divider = kwargs["angle_divider"]
 
+        if dataset_info_dict["overfit"]:
+            self.overfit = True
+            self.r1 = Rotation.identity()
+            self.r2 = Rotation.random() ** (1/self.angle_divider)
+            self.rotations = [Rotation.from_euler('xyz', [15, 0, 0], degrees=True), Rotation.from_euler('xyz', [0, 30, 0], degrees=True), Rotation.from_euler('xyz', [0, 0, 30], degrees=True), Rotation.from_euler('xyz', [-30, 0, 0], degrees=True), Rotation.from_euler('xyz', [0, -30, 0], degrees=True), Rotation.from_euler('xyz', [0, 0, -30], degrees=True)]
+        else:
+            self.overfit = False
+
+    def random_rotation_ball(self, n=1):
+        max_angle = np.pi / self.angle_divider
+        # Uniform random axes
+        axis = np.random.normal(size=(n, 3))
+        axis /= np.linalg.norm(axis, axis=1, keepdims=True)
+
+        # Uniform random volume in SO(3)
+        u = np.random.uniform(0, 1, size=n)
+
+        target = u * (max_angle - np.sin(max_angle))
+
+        angles = np.array([
+            brentq(
+                lambda theta: theta - np.sin(theta) - t,
+                0,
+                max_angle
+            )
+            for t in target
+        ])
+
+        rotvecs = axis * angles[:, None]
+
+        return Rotation.from_rotvec(rotvecs)
+
     def __getitem__(self, idx, random_rotation=None, random_rotation2=None):
         piece_name = self.piece_names[idx]
 
-        random_rotation = Rotation.random() if random_rotation is None else random_rotation
-        random_rotation2 = Rotation.random()  ** (1/self.angle_divider) if random_rotation2 is None else random_rotation2
+        if self.overfit:
+            random_rotation = self.r1
+            #random_rotation2 = self.r2
+            #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
+            #import random
+            #random_rotation2 = random.choice(self.rotations)
+            random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
+
+        else:
+            random_rotation = Rotation.random() if random_rotation is None else random_rotation
+            #random_rotation = self.r1
+
+            #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
+            random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
+
+
         grid, opacity_multiplier = self.load_grid_representation(piece_name)
         grid1 = self.rotate_grid(grid.clone(), random_rotation)
         grid2 = self.rotate_grid(grid.clone(), random_rotation2 * random_rotation)

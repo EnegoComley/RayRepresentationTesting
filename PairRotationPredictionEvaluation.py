@@ -1,3 +1,5 @@
+from gc import unfreeze
+
 import torch
 from lightning.pytorch.loggers import WandbLogger
 
@@ -46,11 +48,14 @@ if __name__ == "__main__":
     parser.add_argument('--nPoints', type=int, default=2500, help='Number of points to sample')
     parser.add_argument('--nOverfit', type=int, default=-1, help='Number of points to sample')
     parser.add_argument("--unfreeze", action='store_true', help="Learn the encoders")
+    parser.add_argument("--profile",action='store_true', help="Profile training speed")
     #parser.add_argument("--param_test", action='store_true', help="Run parameter test")
 
 
 
     args = parser.parse_args()
+    if args.profile:
+        args.no_logger = True
     print(args)
 
 def quat2mat(quat):
@@ -942,7 +947,7 @@ if __name__ == "__main__":
 
     datasets_path = "~/masters/datasets/" if args.ncc else "~/Documents/masters/datasets/"
 
-    encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1]) if "_" in args.model else encoders[args.model]()
+    encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1], unfreeze=not args.unfreeze) if "_" in args.model else encoders[args.model](not args.unfreeze)
 
     dataset_kwargs = {}
     if encoder.dataloader["dualRotated"] == "RandomDualRotationPointCloudsDataloader":
@@ -988,11 +993,16 @@ if __name__ == "__main__":
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(test_output_dir, exist_ok=True)
     checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(dirpath=ckpt_dir, )
-    epochs = 1000 if args.overfit or args.nOverfit != -1 else 2000
+    epochs = 1000 if args.overfit or args.nOverfit != -1 else 1000
+    if args.profile:
+        epochs = 2
     precision = "32-true"  # PTV3 doesn't support float16 for normal estimation on CUDA
     #lr_monitor = LearningRateMonitor(logging_interval='step')
     accelerator = "gpu"
-    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback], precision=precision, logger=wandb_logger, accumulate_grad_batches=encoder.learned_batch_size/encoder.batch_size if not args.overfit or args.nOverfit != -1 else 1, num_sanity_val_steps=0)
+    optional_args = {}
+    if args.profile:
+        optional_args["profiler"] = "simple"
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback], precision=precision, logger=wandb_logger, accumulate_grad_batches=encoder.learned_batch_size/encoder.batch_size if not args.overfit or args.nOverfit != -1 else 1, num_sanity_val_steps=0, **optional_args)
     trainer.fit(model, datamodule=dataset_loader)
 
     results = trainer.test(model, datamodule=dataset_loader)

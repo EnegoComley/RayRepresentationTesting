@@ -404,6 +404,8 @@ class EM3FEncoder(Encoder):
             self.model = model.feature_extractor
             if self.freeze_grad:
                 self.model = self.model.eval()
+            else:
+                self.model = self.model.train()
 
     def forward(self, batch, visualise=False):
         points, normals, colors, *extra_args = batch

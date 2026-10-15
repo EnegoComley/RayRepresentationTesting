@@ -35,7 +35,7 @@ class PuzzleDatasetLoader(L.LightningDataModule):
         self.num_workers = num_workers
 
     def get_dataloader(self, split_dict):
-        return DataLoader(self.dataset(split_dict, self.dataset_info_dict), batch_size=self.batch_size, shuffle=True, drop_last=True, num_workers=self.num_workers)
+        return DataLoader(self.dataset(split_dict, self.dataset_info_dict), batch_size=self.batch_size, shuffle=True, drop_last=True, num_workers=self.num_workers, pin_memory=True, persistent_workers=True)
 
     def setup(self, stage: str):
         return

@@ -947,7 +947,7 @@ if __name__ == "__main__":
 
     datasets_path = "~/masters/datasets/" if args.ncc else "~/Documents/masters/datasets/"
 
-    encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1], unfreeze=not args.unfreeze) if "_" in args.model else encoders[args.model](not args.unfreeze)
+    encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1], not args.unfreeze) if "_" in args.model else encoders[args.model](not args.unfreeze)
 
     dataset_kwargs = {}
     if encoder.dataloader["dualRotated"] == "RandomDualRotationPointCloudsDataloader":

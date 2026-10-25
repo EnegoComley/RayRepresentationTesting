@@ -27,6 +27,8 @@ import lightning as L
 
 from contextlib import nullcontext
 
+import copy
+
 
 class TransformerEncoder(nn.Module):
     def __init__(self, transformer_layers=1, representation_size=128, nhead=16, latent_size=512):
@@ -55,6 +57,7 @@ def show_point_cloud(pos, color=None, *, ax=None, title=None, size=1, cmap="viri
     ax.scatter(p[:, 0], p[:, 1], p[:, 2], c=c, s=size, depthshade=False, linewidths=0, **kw)
     ax.view_init(elev=view[0], azim=view[1])
     ax.set_box_aspect(p.max(axis=0) - p.min(axis=0), zoom=1.6)
+    print(p.max(axis=0), p.min(axis=0))
     ax.set_axis_off()
     if title:
         ax.set_title(title, fontsize=10)
@@ -411,18 +414,41 @@ class EM3FEncoder(Encoder):
         points, normals, colors, *extra_args = batch
 
         B, n_points, _ = batch[0].shape
+        with torch.inference_mode() if self.freeze_grad else nullcontext():
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=False):
+                # Pass the color into the encoder dictionary
+
+                _, encoder_out_dict = self.model.encoder(
+                    {
+                        "coord": points.reshape(-1, 3),
+                        "offset": torch.arange(1, B + 1, device=points.device) * points.shape[1],
+                        "feat": torch.cat([points.reshape(-1, 3), normals.reshape(-1, 3)], dim=-1),
+                        "color": (colors.reshape(-1, 3).float() / 127.5) - 1.0,  # Added color here
+                        "grid_size": torch.tensor(self.model.grid_size, device=points.device),
+                    }
+                )
+                model_out = encoder_out_dict["feat"]
+
+        features = model_out.reshape(B, n_points, self.embedding_size)
+        return features
+
+    def forward_OLD(self, batch, visualise=False):
+        points, normals, colors, *extra_args = batch
+
+        B, n_points, _ = batch[0].shape
         features = None
         for i in range(B):
             with torch.inference_mode() if self.freeze_grad else nullcontext():
                 with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=False):
                     # Pass the color into the encoder dictionary
+
                     _, encoder_out_dict = self.model.encoder(
                         {
                             "coord": points[i],
-                            "offset": torch.tensor([points.shape[1]]),
+                            "offset": torch.tensor([points.shape[1]], device=points.device),
                             "feat": torch.cat([points[i], normals[i]], dim=-1),
                             "color": (colors[i].float() / 127.5) - 1.0,  # Added color here
-                            "grid_size": torch.tensor(self.model.grid_size).to(points.device),
+                            "grid_size": torch.tensor(self.model.grid_size, device=points.device),
                         }
                     )
                     model_out = encoder_out_dict["feat"]
@@ -431,6 +457,36 @@ class EM3FEncoder(Encoder):
             features[i] = model_out
             del model_out
         return features
+
+class EM3RFPTV3(EM3FEncoder):
+    def __init__(self, freeze_grad=True):
+        super().__init__(freeze_grad)
+        import hydra
+        from hydra import initialize, compose
+        with initialize(config_path="em3rf/configs"):
+            cfg = compose(config_name="eval.yaml", overrides=["experiment=denoiser_flow_matching", "model/encoder@model.feature_extractor.encoder=ptv3"])
+            model: L.LightningModule = hydra.utils.instantiate(cfg.get("model"))
+
+            self.model = model.feature_extractor.to(torch.device("cuda:0"))
+            if self.freeze_grad:
+                self.model = self.model.eval()
+            else:
+                self.model = self.model.train()
+
+class EM3RFVN(EM3FEncoder):
+    def __init__(self, freeze_grad=True):
+        super().__init__(freeze_grad)
+        import hydra
+        from hydra import initialize, compose
+        with initialize(config_path="em3rf/configs"):
+            cfg = compose(config_name="eval.yaml", overrides=["experiment=denoiser_flow_matching", "model/encoder@model.feature_extractor.encoder=vn_transformer"])
+            model: L.LightningModule = hydra.utils.instantiate(cfg.get("model"))
+
+            self.model = model.feature_extractor.to(torch.device("cuda:0"))
+            if self.freeze_grad:
+                self.model = self.model.eval()
+            else:
+                self.model = self.model.train()
 
 class PointEncoder(Encoder):
     def __init__(self, freeze_grad):
@@ -496,6 +552,8 @@ class PointTransformerV3(PointEncoder):
             transformed_data["pos_grid"],
             batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device = transformed_data["x"].device),
         )
+        self.last_features = features
+        self.last_transformed_data = transformed_data
         return features[transformed_data["inverse"]]
 
     def __init__(self, freeze_grad=True):
@@ -511,7 +569,10 @@ class PointTransformerV3(PointEncoder):
         if self.freeze_grad:
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
-        self.transform = info["transform"]
+        transforms = copy.deepcopy(info["transform"])
+        transforms.transforms = transforms.transforms[2:]
+        self.transform = transforms
+
         self.embedding_size = 64
         self.transformed_origin_pos_name = "origin_pos"
 
@@ -653,4 +714,4 @@ class KPConv(PointEncoder):
 
 
 
-encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3FEncoder" : EM3FEncoder, "GridPoints" : GridPoints}
+encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3FEncoder" : EM3FEncoder, "EM3RFPTV3" : EM3RFPTV3, "GridPoints" : GridPoints, "EM3RFVN" : EM3RFVN}

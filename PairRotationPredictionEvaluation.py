@@ -49,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument('--nOverfit', type=int, default=-1, help='Number of points to sample')
     parser.add_argument("--unfreeze", action='store_true', help="Learn the encoders")
     parser.add_argument("--profile",action='store_true', help="Profile training speed")
+    parser.add_argument("--ModelNet40", action='store_true', help="Use ModelNet40")
     #parser.add_argument("--param_test", action='store_true', help="Run parameter test")
 
 
@@ -952,15 +953,17 @@ if __name__ == "__main__":
     dataset_kwargs = {}
     if encoder.dataloader["dualRotated"] == "RandomDualRotationPointCloudsDataloader":
         dataset_kwargs["n_points"] = args.nPoints
+    if args.ModelNet40:
+        dataset_kwargs["modelnet40"] = True
 
     batch_size = encoder.batch_size
     if args.overfit:
-        batch_size = 1
+        batch_size = 4
     if args.nOverfit != -1:
         batch_size = min(batch_size, args.nOverfit)
 
     dataset_loader = RepairDatasetLoader(batch_size=batch_size, dataset_type=encoder.dataloader["dualRotated"],
-                                         representation_folder_name=encoder.representation_folder_name, num_workers=8, data_dir=datasets_path, angle_divider=args.angle_divider, overfit=args.overfit, nOverfit=args.nOverfit, ncc=args.ncc, **dataset_kwargs)
+                                         representation_folder_name="ModelNet40" if args.ModelNet40 else encoder.representation_folder_name, num_workers=8, data_dir=datasets_path, angle_divider=args.angle_divider, overfit=args.overfit, nOverfit=args.nOverfit, ncc=args.ncc, **dataset_kwargs)
     L.seed_everything(42)
 
     run_name = f"{args.model}"
@@ -1002,7 +1005,7 @@ if __name__ == "__main__":
     optional_args = {}
     if args.profile:
         optional_args["profiler"] = "simple"
-    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback], precision=precision, logger=wandb_logger, accumulate_grad_batches=encoder.learned_batch_size/encoder.batch_size if not args.overfit or args.nOverfit != -1 else 1, num_sanity_val_steps=0, **optional_args)
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback], precision=precision, logger=wandb_logger, accumulate_grad_batches=encoder.learned_batch_size/encoder.batch_size if not args.overfit or args.nOverfit != -1 else 8, num_sanity_val_steps=0, **optional_args)
     trainer.fit(model, datamodule=dataset_loader)
 
     results = trainer.test(model, datamodule=dataset_loader)

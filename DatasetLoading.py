@@ -104,14 +104,19 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
             self.puzzle_train_split = self.puzzle_train_split[:1]
             self.puzzle_val_split = self.puzzle_val_split[:1]
 
-            self.test_pieces = ['RPf_00347.npz']
-            self.train_pieces = ['RPf_00347.npz']
-            self.val_pieces = ['RPf_00347.npz']
+            self.test_pieces = ['RPf_00347.npz'] * 32
+            self.train_pieces = ['RPf_00347.npz'] * 32
+            self.val_pieces = ['RPf_00347.npz'] * 32
         elif nOverfit != -1:
             random.shuffle(self.train_pieces)
             self.train_pieces = self.train_pieces[:nOverfit]
             self.val_pieces = self.train_pieces
             self.test_pieces = self.train_pieces
+
+        if kwargs["modelnet40"]:
+            self.train_pieces = [str(x) + ".npz" for x in range(9840)]
+            self.test_pieces = [str(x) + ".npz" for x in range(9840, 9840 + 2468)]
+            self.val_pieces = self.test_pieces
 
 
         self.test_split_dict = {"puzzles": self.puzzle_test_split, "pieces": self.test_pieces}
@@ -301,6 +306,30 @@ class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloade
 
         return Rotation.from_rotvec(rotvecs)
 
+    def get_random_angle_dcp(self, factor):
+        anglex = np.random.uniform() * np.pi / factor
+        angley = np.random.uniform() * np.pi / factor
+        anglez = np.random.uniform() * np.pi / factor
+
+        cosx = np.cos(anglex)
+        cosy = np.cos(angley)
+        cosz = np.cos(anglez)
+        sinx = np.sin(anglex)
+        siny = np.sin(angley)
+        sinz = np.sin(anglez)
+        Rx = np.array([[1, 0, 0],
+                       [0, cosx, -sinx],
+                       [0, sinx, cosx]])
+        Ry = np.array([[cosy, 0, siny],
+                       [0, 1, 0],
+                       [-siny, 0, cosy]])
+        Rz = np.array([[cosz, -sinz, 0],
+                       [sinz, cosz, 0],
+                       [0, 0, 1]])
+        R_ab = Rx.dot(Ry).dot(Rz)
+        rotation = Rotation.from_matrix(R_ab)
+        return rotation
+
     def __getitem__(self, idx, random_rotation=None, random_rotation2=None):
         piece_name = self.piece_names[idx]
 
@@ -312,7 +341,7 @@ class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloade
             #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
             #import random
             #random_rotation2 = random.choice(self.rotations)
-            random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
+            random_rotation2 = self.get_random_angle_dcp(self.angle_divider) if random_rotation2 is None else random_rotation2
 
         else:
             random_rotation = Rotation.random() if random_rotation is None else random_rotation

@@ -113,7 +113,7 @@ class RepairDatasetLoader(PuzzleDatasetLoader):
             self.val_pieces = self.train_pieces
             self.test_pieces = self.train_pieces
 
-        if kwargs["modelnet40"]:
+        if "modelnet40" in kwargs and kwargs["modelnet40"]:
             self.train_pieces = [str(x) + ".npz" for x in range(9840)]
             self.test_pieces = [str(x) + ".npz" for x in range(9840, 9840 + 2468)]
             self.val_pieces = self.test_pieces

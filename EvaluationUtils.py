@@ -71,7 +71,7 @@ class Encoder(torch.nn.Module):
         self.embedding_size = 64
         self.batch_size = 4
         self.learned_batch_size = 64
-        self.accumulate_grad_batches = 1
+        #self.accumulate_grad_batches = 1
         self.use_batch_norm = True
         self.freeze_grad = freeze_grad
 

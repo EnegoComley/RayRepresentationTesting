@@ -311,6 +311,12 @@ class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloade
         angley = np.random.uniform() * np.pi / factor
         anglez = np.random.uniform() * np.pi / factor
 
+
+        R_ab = self.euler_to_matrix(anglex, angley, anglez)
+        rotation = Rotation.from_matrix(R_ab)
+        return rotation, R_ab
+
+    def euler_to_matrix(self, anglex, angley, anglez):
         cosx = np.cos(anglex)
         cosy = np.cos(angley)
         cosz = np.cos(anglez)
@@ -327,8 +333,9 @@ class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloade
                        [sinz, cosz, 0],
                        [0, 0, 1]])
         R_ab = Rx.dot(Ry).dot(Rz)
-        rotation = Rotation.from_matrix(R_ab)
-        return rotation
+
+        return R_ab
+
 
     def __getitem__(self, idx, random_rotation=None, random_rotation2=None):
         piece_name = self.piece_names[idx]
@@ -341,26 +348,29 @@ class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloade
             #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
             #import random
             #random_rotation2 = random.choice(self.rotations)
-            random_rotation2 = self.get_random_angle_dcp(self.angle_divider) if random_rotation2 is None else random_rotation2
+            random_rotation2, rr2_matrix = self.get_random_angle_dcp(self.angle_divider)
 
         else:
             random_rotation = Rotation.random() if random_rotation is None else random_rotation
             #random_rotation = self.r1
 
             #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
-            random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
+            #random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
+            random_rotation2, rr2_matrix = self.get_random_angle_dcp(self.angle_divider)
 
         points, normals, colors = self.load_pointcloud(piece_name)
         points1, normals1 = self.rotate_pointcloud(points, normals, random_rotation)
         points2, normals2 = self.rotate_pointcloud(points, normals, random_rotation2 * random_rotation)
 
         rotation = torch.from_numpy(random_rotation2.as_quat(canonical=True)).float()  # w >= 0
+
         #rotation = torch.from_numpy(random_rotation2.as_euler('zxy', degrees=True)).float()  # w >= 0
 
         #obj_rot1 = torch.from_numpy(random_rotation.as_matrix()).float()
         #obj_rot2 = torch.from_numpy((random_rotation2 * random_rotation).as_matrix()).float()
+        rr2_matrix = torch.from_numpy(rr2_matrix).float()
 
-        return (points1, normals1, colors), (points2, normals2, colors), rotation
+        return (points1, normals1, colors), (points2, normals2, colors), (rr2_matrix, rotation)
 
 
 class GridDataset(Dataset):

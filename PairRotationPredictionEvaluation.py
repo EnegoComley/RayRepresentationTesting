@@ -551,8 +551,7 @@ class PairRotationPrediction(L.LightningModule):
 
         return DCP_loss
     def calculate_loss(self, batch, stage):  #_DCP
-        gt = batch[-1]
-        gt_mat = quat2mat(gt)
+        gt_mat, gt = batch[-1]
 
         pred, translation_pred = self.model(batch)
         pred_rotation = Rotation.from_matrix(pred.cpu().detach().numpy(), assume_valid=False)
@@ -570,7 +569,7 @@ class PairRotationPrediction(L.LightningModule):
         #pred = F.normalize(pred, dim=-1)
 
 
-        #rotated_pointcloud = batch[0][0][0] @ pred[0].T
+        #rotated_pointcloud = (pred[0] @ batch[0][0][0].T).T
         #self.visualize_pointclouds([(batch[0][0][0], batch[0][2][0]), (batch[1][0][0], batch[1][2][0]), (rotated_pointcloud, batch[0][2][0])])
 
 
@@ -1005,6 +1004,7 @@ if __name__ == "__main__":
     optional_args = {}
     if args.profile:
         optional_args["profiler"] = "simple"
+
     trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback], precision=precision, logger=wandb_logger, accumulate_grad_batches=encoder.learned_batch_size/encoder.batch_size if not args.overfit or args.nOverfit != -1 else 8, num_sanity_val_steps=0, **optional_args)
     trainer.fit(model, datamodule=dataset_loader)
 

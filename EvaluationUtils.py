@@ -69,7 +69,7 @@ class Encoder(torch.nn.Module):
         self.dataloader = {}
         self.representation_folder_name = ""
         self.embedding_size = 64
-        self.batch_size = 1
+        self.batch_size = 4
         self.learned_batch_size = 64
         #self.accumulate_grad_batches = 1
         self.use_batch_norm = True

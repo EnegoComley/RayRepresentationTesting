@@ -637,6 +637,36 @@ class DualRandomRotationRGBAGridDataset(RandomRotationRGBAGridDataset):
 
         return Rotation.from_rotvec(rotvecs)
 
+    def get_random_angle_dcp(self, factor):
+        anglex = np.random.uniform() * np.pi / factor
+        angley = np.random.uniform() * np.pi / factor
+        anglez = np.random.uniform() * np.pi / factor
+
+
+        R_ab = self.euler_to_matrix(anglex, angley, anglez)
+        rotation = Rotation.from_matrix(R_ab)
+        return rotation, R_ab
+
+    def euler_to_matrix(self, anglex, angley, anglez):
+        cosx = np.cos(anglex)
+        cosy = np.cos(angley)
+        cosz = np.cos(anglez)
+        sinx = np.sin(anglex)
+        siny = np.sin(angley)
+        sinz = np.sin(anglez)
+        Rx = np.array([[1, 0, 0],
+                       [0, cosx, -sinx],
+                       [0, sinx, cosx]])
+        Ry = np.array([[cosy, 0, siny],
+                       [0, 1, 0],
+                       [-siny, 0, cosy]])
+        Rz = np.array([[cosz, -sinz, 0],
+                       [sinz, cosz, 0],
+                       [0, 0, 1]])
+        R_ab = Rx.dot(Ry).dot(Rz)
+
+        return R_ab
+
     def __getitem__(self, idx, random_rotation=None, random_rotation2=None):
         piece_name = self.piece_names[idx]
 
@@ -653,7 +683,11 @@ class DualRandomRotationRGBAGridDataset(RandomRotationRGBAGridDataset):
             #random_rotation = self.r1
 
             #random_rotation2 = Rotation.random() ** (1 / self.angle_divider) if random_rotation2 is None else random_rotation2
-            random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
+            #random_rotation2 = self.random_rotation_ball()[0] if random_rotation2 is None else random_rotation2
+
+            random_rotation2, rr2_matrix = self.get_random_angle_dcp(self.angle_divider)
+
+
 
 
         grid, opacity_multiplier = self.load_grid_representation(piece_name)
@@ -662,7 +696,8 @@ class DualRandomRotationRGBAGridDataset(RandomRotationRGBAGridDataset):
 
         rotation = torch.from_numpy(random_rotation2.as_quat(canonical=True)).float()  # w >= 0
 
-        return (grid1, opacity_multiplier, piece_name), (grid2, opacity_multiplier, piece_name), rotation
+        rr2_matrix = torch.from_numpy(rr2_matrix).float()
+        return (grid1, opacity_multiplier, piece_name), (grid2, opacity_multiplier, piece_name), (rr2_matrix, rotation)
 
 class DataLoadingRayManager():#RayManager):
     def __init__(self, dtype=torch.float32):

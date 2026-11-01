@@ -126,7 +126,7 @@ if __name__ == "__main__":
     datasets_path = data_dir = "~/masters/datasets/" if args.ncc else "~/Documents/masters/datasets/"
 
     encoder = encoders[args.model.split("_")[0]](args.model.split("_")[1], not args.unfreeze) if "_" in args.model else encoders[args.model](not args.unfreeze)
-    dataset_loader = RepairDatasetLoader(batch_size=encoder.batch_size, dataset_type=encoder.dataloader["rotated"],
+    dataset_loader = RepairDatasetLoader(batch_size=encoder.batch_size * 2, dataset_type=encoder.dataloader["rotated"],
                                          representation_folder_name=encoder.representation_folder_name, num_workers=3, data_dir=datasets_path, ncc=args.ncc)
     L.seed_everything(42)
 
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     precision = "32-true"#"16-true" if args.low_acc else "32-true"
     #lr_monitor = LearningRateMonitor(logging_interval='step')
     accelerator = "gpu"
-    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback], precision=precision, logger=wandb_logger, accumulate_grad_batches=encoder.learned_batch_size/encoder.batch_size)
+    trainer = L.Trainer(max_epochs=epochs, accelerator=accelerator, callbacks=[] if args.no_logger else [checkpoint_callback], precision=precision, logger=wandb_logger, accumulate_grad_batches=encoder.learned_batch_size/(encoder.batch_size * 2))
     trainer.fit(model, datamodule=dataset_loader)
 
     results = trainer.test(model, datamodule=dataset_loader)

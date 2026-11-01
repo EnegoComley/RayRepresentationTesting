@@ -409,7 +409,7 @@ class RayEncoder(Encoder):
         elif positional_encoding == "none":
             self.positional_encoding = NoPositionalEncoder()
 
-class EM3FEncoder(Encoder):
+class EM3RFEncoder(Encoder):
     def __init__(self, freeze_grad=True, n_inputs = 1):
         super().__init__(freeze_grad)
         self.embedding_size = 64
@@ -434,7 +434,7 @@ class EM3FEncoder(Encoder):
 
     def forward(self, batch, visualise=False):
         if self.n_inputs == 1:
-            batch = batch
+            batch = batch[0]
         else:
             batch = self.combine_pointclouds(batch[:self.n_inputs])
 
@@ -485,7 +485,7 @@ class EM3FEncoder(Encoder):
             del model_out
         return features
 
-class EM3RFPTV3(EM3FEncoder):
+class EM3RFPTV3(EM3RFEncoder):
     def __init__(self, freeze_grad=True, n_inputs=1):
         super().__init__(freeze_grad, n_inputs)
         import hydra
@@ -500,7 +500,7 @@ class EM3RFPTV3(EM3FEncoder):
             else:
                 self.model = self.model.train()
 
-class EM3RFVN(EM3FEncoder):
+class EM3RFVN(EM3RFEncoder):
     def __init__(self, freeze_grad=True, n_inputs=1):
         super().__init__(freeze_grad, n_inputs)
         import hydra
@@ -745,4 +745,4 @@ class KPConv(PointEncoder):
 
 
 
-encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3FEncoder" : EM3FEncoder, "EM3RFPTV3" : EM3RFPTV3, "GridPoints" : GridPoints, "EM3RFVN" : EM3RFVN}
+encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3RFEncoder" : EM3RFEncoder, "EM3RFPTV3" : EM3RFPTV3, "GridPoints" : GridPoints, "EM3RFVN" : EM3RFVN}

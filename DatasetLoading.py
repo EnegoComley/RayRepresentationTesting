@@ -262,7 +262,7 @@ class RandomRotationPointCloudsDataloader(PointCloudDatasetDataloader):
         points, normals = self.rotate_pointcloud(points, normals, random_rotation)
         rotation = torch.from_numpy(random_rotation.as_matrix()).to(dtype=torch.float32)
 
-        return points, normals, colors, rotation
+        return (points, normals, colors), rotation
 
 class RandomDualRotationPointCloudsDataloader(RandomRotationPointCloudsDataloader):
     def __init__(self, split_dict, dataset_info_dict):
@@ -597,7 +597,7 @@ class RandomRotationRGBAGridDataset(RGBAGridDataset):
 
         blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c = self.load_coloured_rays(piece_name, rotation=random_rotation.as_matrix())
 
-        return grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c, piece_name, torch.tensor(random_rotation.as_matrix(), dtype=torch.float32)
+        return (grid, opacity_multiplier, blank_edge_rays_o, blank_edge_rays_d, rgb_rays_o, rgb_rays_d, rgb_rays_c), piece_name, torch.tensor(random_rotation.as_matrix(), dtype=torch.float32)
 
 class DualRandomRotationRGBAGridDataset(RandomRotationRGBAGridDataset):
     def __init__(self, split_dict, dataset_info_dict):

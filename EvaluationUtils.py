@@ -29,6 +29,9 @@ from contextlib import nullcontext
 
 import copy
 
+from torch_geometric.utils import to_dense_batch
+
+
 
 class TransformerEncoder(nn.Module):
     def __init__(self, transformer_layers=1, representation_size=128, nhead=16, latent_size=512):
@@ -78,6 +81,10 @@ class Encoder(torch.nn.Module):
     def forward(self, batch):
         raise NotImplementedError
         return batch
+
+    def combine_pointclouds(self, point_clouds):
+        return [torch.cat([pc[i] for pc in point_clouds], dim=0) for i in range(len(point_clouds[0]))]
+
 
 class SinusoidalPositionalEncoding3D(nn.Module):
     """
@@ -250,10 +257,11 @@ class NoPositionalEncoder(nn.Module):
         return torch.zeros_like(x)
 
 class RGBAGridEncoder(Encoder):
-    def __init__(self, model, freeze_grad=True):
+    def __init__(self, model, freeze_grad=True, n_inputs = 1):
         super().__init__(freeze_grad)
         self.dataloader = {"plain" : "RGBAGridDataset", "rotated" : "RandomRotationRGBAGridDataset", "dualRotated" : "DualRandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
+        self.n_inputs = n_inputs
         parameters = model.split("-")
         model = parameters[0]
 
@@ -286,7 +294,11 @@ class RGBAGridEncoder(Encoder):
 
 
     def forward(self, batch):
-        grid  = batch[0]
+        if self.n_inputs == 1:
+            grid = batch[0][0]
+        else:
+            grid = torch.cat([x[0] for x in batch[:self.n_inputs]], dim=0)
+
         with torch.inference_mode() if self.freeze_grad else nullcontext():
             representation = self.model(grid)
             representation = representation.permute(0, 2, 3, 4, 1)  # (B, C, Z, Y, X) -> (B, Z, Y, X, C)
@@ -297,11 +309,12 @@ class RGBAGridEncoder(Encoder):
 
 
 class PlainRGBAGrid(Encoder):
-    def __init__(self, model, freeze_grad=True):
+    def __init__(self, model, freeze_grad=True, n_inputs = 1):
         super().__init__(freeze_grad)
         self.dataloader = {"plain": "RGBAGridDataset", "rotated": "RandomRotationRGBAGridDataset",
                            "dualRotated": "DualRandomRotationRGBAGridDataset"}
         self.representation_folder_name = "RGBAGrids"
+        self.n_inputs = n_inputs
         parameters = model.split("-")
 
         positional_encoding = parameters[1]
@@ -320,7 +333,10 @@ class PlainRGBAGrid(Encoder):
         self.mlp = nn.Sequential(nn.Linear(2048, 1024), nn.ReLU(), nn.Linear(1024, 512), nn.ReLU())
 
     def forward(self, batch):
-        grid = batch[0]
+        if self.n_inputs == 1:
+            grid = batch[0][0]
+        else:
+            grid = torch.cat([x[0] for x in batch[:self.n_inputs]], dim=0)
         grid = grid.view(grid.size(0), 12, 8, 12, 8, 12, 8, 4)
         grid = grid.permute(0, 1, 3, 5, 2, 4, 6, 7)
         grid =torch.reshape(grid, (grid.size(0), 12, 12, 12, -1))
@@ -335,7 +351,7 @@ class PlainRGBAGrid(Encoder):
 
 
 class GridPoints(Encoder):
-    def __init__(self, model, freeze_grad=True):
+    def __init__(self, model, freeze_grad=True, n_inputs = 1):
         super().__init__(freeze_grad)
         self.dataloader = {"plain": "RGBAGridDataset", "rotated": "RandomRotationRGBAGridDataset",
                            "dualRotated": "DualRandomRotationRGBAGridDataset"}
@@ -349,10 +365,15 @@ class GridPoints(Encoder):
         from torch_pointcloud.transforms import EstimateNormals
         self.estimate_normals = EstimateNormals
         self.use_batch_norm = False
+        self.n_inputs = n_inputs
+
 
 
     def forward(self, batch):
-        grid = batch[0]
+        if self.n_inputs == 1:
+            grid = batch[0]
+        else:
+            grid = torch.cat(batch[:self.n_inputs], dim=0)
 
         n = grid.shape[-1]  # grid resolution per axis
         coords = torch.linspace(-17, 17, n)  # (n,) evenly spaced values
@@ -389,7 +410,7 @@ class RayEncoder(Encoder):
             self.positional_encoding = NoPositionalEncoder()
 
 class EM3FEncoder(Encoder):
-    def __init__(self, freeze_grad=True):
+    def __init__(self, freeze_grad=True, n_inputs = 1):
         super().__init__(freeze_grad)
         self.embedding_size = 64
         self.dataloader = {"plain": "PointCloudDatasetDataloader", "rotated": "RandomRotationPointCloudsDataloader",
@@ -409,8 +430,14 @@ class EM3FEncoder(Encoder):
                 self.model = self.model.eval()
             else:
                 self.model = self.model.train()
+        self.n_inputs = n_inputs
 
     def forward(self, batch, visualise=False):
+        if self.n_inputs == 1:
+            batch = batch
+        else:
+            batch = self.combine_pointclouds(batch[:self.n_inputs])
+
         points, normals, colors, *extra_args = batch
 
         B, n_points, _ = batch[0].shape
@@ -459,8 +486,8 @@ class EM3FEncoder(Encoder):
         return features
 
 class EM3RFPTV3(EM3FEncoder):
-    def __init__(self, freeze_grad=True):
-        super().__init__(freeze_grad)
+    def __init__(self, freeze_grad=True, n_inputs=1):
+        super().__init__(freeze_grad, n_inputs)
         import hydra
         from hydra import initialize, compose
         with initialize(config_path="em3rf/configs"):
@@ -474,8 +501,8 @@ class EM3RFPTV3(EM3FEncoder):
                 self.model = self.model.train()
 
 class EM3RFVN(EM3FEncoder):
-    def __init__(self, freeze_grad=True):
-        super().__init__(freeze_grad)
+    def __init__(self, freeze_grad=True, n_inputs=1):
+        super().__init__(freeze_grad, n_inputs)
         import hydra
         from hydra import initialize, compose
         with initialize(config_path="em3rf/configs"):
@@ -489,7 +516,7 @@ class EM3RFVN(EM3FEncoder):
                 self.model = self.model.train()
 
 class PointEncoder(Encoder):
-    def __init__(self, freeze_grad):
+    def __init__(self, freeze_grad, n_inputs=1):
         super().__init__(freeze_grad)
         self.embedding_size = 64
         #self.model = lambda transformed_data : torch.zeros(self.embedding_size)
@@ -497,6 +524,7 @@ class PointEncoder(Encoder):
         self.transformed_origin_pos_name = "NONE"
         self.dataloader = {"plain": "PointCloudDatasetDataloader", "rotated" : "RandomRotationPointCloudsDataloader", "dualRotated" : "RandomDualRotationPointCloudsDataloader"}
         self.representation_folder_name = "pointclouds2_5k"
+        self.n_inputs = n_inputs
 
     def package_pointcloud(self, batch):
         data =  [{"pos": batch[0][i] * 10, "normal": batch[1][i], "color": batch[2][i]} for i in range(batch[0].shape[0])] #
@@ -504,22 +532,25 @@ class PointEncoder(Encoder):
         return data
 
     def forward(self, batch, visualise=False):
+        if self.n_inputs == 1:
+            batch = batch[0]
+        else:
+            batch = self.combine_pointclouds(batch[:self.n_inputs])
+
         B, n_points, _ = batch[0].shape
-        features = torch.zeros(B, n_points, self.embedding_size).to(batch[0].device)
-        for i in range(B):
-            packaged_data = self.package_pointcloud([x[i:i+1] for x in batch])
-            transformed_data = self.transform(packaged_data)
-            with torch.inference_mode() if self.freeze_grad else nullcontext():
-                model_out = self.model(transformed_data)
-                features[i] = model_out
-                if visualise:
-                    rgb = self.pca_color(model_out).cpu()
-                    self.show_clouds(
-                        [{"pos": packaged_data["pos"].cpu(), "color": packaged_data["color"].cpu() / 255}, {"pos": transformed_data[self.transformed_origin_pos_name].cpu(), "color": rgb}],
-                        ["input: color from the scanner", f"PCA of {model_out.shape[1]:,} features per point"],
-                        point_size=0.4,
-                    )
-                del model_out
+        #features = torch.zeros(B, n_points, self.embedding_size).to(batch[0].device)
+        packaged_data = self.package_pointcloud(batch)
+        transformed_data = self.transform(packaged_data)
+        with torch.inference_mode() if self.freeze_grad else nullcontext():
+            features = self.model(transformed_data)
+            features, _ = to_dense_batch(features, packaged_data["batch"])
+            #if visualise:
+            #    rgb = self.pca_color(features).cpu()
+            #    self.show_clouds(
+            #        [{"pos": packaged_data["pos"].cpu(), "color": packaged_data["color"].cpu() / 255}, {"pos": transformed_data[self.transformed_origin_pos_name].cpu(), "color": rgb}],
+            #        ["input: color from the scanner", f"PCA of {features.shape[1]:,} features per point"],
+            #        point_size=0.4,
+            #    )
         return features
 
     def show_clouds(self, clouds, titles, point_size=5.0, columns=None, height=4.4):
@@ -556,8 +587,8 @@ class PointTransformerV3(PointEncoder):
         self.last_transformed_data = transformed_data
         return features[transformed_data["inverse"]]
 
-    def __init__(self, freeze_grad=True):
-        super().__init__(freeze_grad)
+    def __init__(self, freeze_grad=True, n_inputs=1):
+        super().__init__(freeze_grad, n_inputs)
         tp_model, info = tp.create_model(
             "ptv3-base.s3dis-area5.pointcept",
             task="segmentation",
@@ -569,9 +600,9 @@ class PointTransformerV3(PointEncoder):
         if self.freeze_grad:
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
-        transforms = copy.deepcopy(info["transform"])
-        transforms.transforms = transforms.transforms[2:]
-        self.transform = transforms
+        #transforms = copy.deepcopy(info["transform"])
+        #transforms.transforms = transforms.transforms[2:]
+        self.transform = info["transform"]#transforms
 
         self.embedding_size = 64
         self.transformed_origin_pos_name = "origin_pos"
@@ -592,8 +623,8 @@ class PointNet2(PointEncoder):
         )
         return features
 
-    def __init__(self, freeze_grad=True):
-        super().__init__(freeze_grad)
+    def __init__(self, freeze_grad=True, n_inputs=1):
+        super().__init__(freeze_grad, n_inputs)
         tp_model, info = tp.create_model(
             "pointnet2.s3dis-area5.openpoints",
             task="segmentation",
@@ -624,8 +655,8 @@ class PointNextxl(PointEncoder):
         )
         return features[transformed_data["inverse"]]
 
-    def __init__(self, freeze_grad=True):
-        super().__init__(freeze_grad)
+    def __init__(self, freeze_grad=True, n_inputs=1):
+        super().__init__(freeze_grad, n_inputs)
         tp_model, info = tp.create_model(
             "pointnext-xl.s3dis-area5.openpoints",
             task="segmentation",
@@ -656,8 +687,8 @@ class Sonata(PointEncoder):
         )
         return features[transformed_data["inverse"]]
 
-    def __init__(self, freeze_grad=True):
-        super().__init__(freeze_grad)
+    def __init__(self, freeze_grad=True, n_inputs=1):
+        super().__init__(freeze_grad, n_inputs)
         tp_model, info = tp.create_model(
             "sonata-lp.scannet20.fair",
             task="segmentation",
@@ -690,8 +721,8 @@ class KPConv(PointEncoder):
         )
         return features[transformed_data["inverse"]]
 
-    def __init__(self, freeze_grad=True):
-        super().__init__(freeze_grad)
+    def __init__(self, freeze_grad=True, n_inputs=1):
+        super().__init__(freeze_grad, n_inputs)
         tp_model, info = tp.create_model(
             "kpfcnn-base.s3dis.hugues-thomas",
             task="segmentation",

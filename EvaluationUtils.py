@@ -581,7 +581,8 @@ class PointTransformerV3(PointEncoder):
         features = self.tp_model(
             transformed_data["x"],
             transformed_data["pos_grid"],
-            batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device = transformed_data["x"].device),
+            batch=transformed_data["batch"],
+            #batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device = transformed_data["x"].device),
         )
         self.last_features = features
         self.last_transformed_data = transformed_data
@@ -619,7 +620,8 @@ class PointNet2(PointEncoder):
         features = self.tp_model(
             x = transformed_data["x"],
             pos = transformed_data["pos"],
-            batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device=transformed_data["x"].device),
+            batch=transformed_data["batch"],
+            #batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device=transformed_data["x"].device),
         )
         return features
 
@@ -651,7 +653,8 @@ class PointNextxl(PointEncoder):
         features = self.tp_model(
             x = transformed_data["x"],
             pos = transformed_data["pos"],
-            batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device=transformed_data["x"].device),
+            batch=transformed_data["batch"],
+            #batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device=transformed_data["x"].device),
         )
         return features[transformed_data["inverse"]]
 
@@ -683,7 +686,8 @@ class Sonata(PointEncoder):
         features = self.tp_model(
             x = transformed_data["x"],
             pos_grid = transformed_data["pos_grid"],
-            batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device=transformed_data["x"].device),
+            batch=transformed_data["batch"],
+            #batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device=transformed_data["x"].device),
         )
         return features[transformed_data["inverse"]]
 
@@ -717,7 +721,8 @@ class KPConv(PointEncoder):
         features = self.tp_model(
             x = transformed_data["x"],
             pos = transformed_data["pos"],
-            batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device=transformed_data["x"].device),
+            batch=transformed_data["batch"],
+            #batch = torch.zeros(transformed_data["x"].shape[0], dtype=torch.int64, device=transformed_data["x"].device),
         )
         return features[transformed_data["inverse"]]
 

@@ -722,6 +722,26 @@ class PointTransformerV3(PointEncoder):
         data["segment"] = data["batch"]
         return data
 
+class PointTransformerV3NoShift(PointTransformerV3):
+    def __init__(self, freeze_grad=True, n_inputs=1):
+        super().__init__(freeze_grad, n_inputs)
+        tp_model, info = tp.create_model(
+            "ptv3-base.s3dis-area5.pointcept",
+            task="segmentation",
+            pretrained=True,
+            num_classes=0,
+            return_info=True
+        )
+        self.tp_model = tp_model.to(torch.device("cuda:0"))
+        if self.freeze_grad:
+            self.tp_model = self.tp_model.eval()
+        self.model = self.model_func
+        transforms = copy.deepcopy(info["transform"])
+        transforms.transforms = transforms.transforms[2:]
+        self.transform = transforms
+
+        self.embedding_size = 64
+        self.transformed_origin_pos_name = "origin_pos"
 
 class PointNet2(PointEncoder):
     def model_func(self, transformed_data):
@@ -858,4 +878,4 @@ class KPConv(PointEncoder):
 
 
 
-encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3RFEncoder" : EM3RFEncoder, "EM3RFPTV3" : EM3RFPTV3, "GridPoints" : GridPoints, "EM3RFVN" : EM3RFVN}
+encoders = {"PTV3" : PointTransformerV3, "PTV3NoShift" : PointTransformerV3NoShift, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3RFEncoder" : EM3RFEncoder, "EM3RFPTV3" : EM3RFPTV3, "GridPoints" : GridPoints, "EM3RFVN" : EM3RFVN}

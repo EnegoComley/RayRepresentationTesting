@@ -571,6 +571,7 @@ class PointEncoder(Encoder):
 
     def forward(self, batch, visualise=False):
 
+        # Separate source and target clouds
         if self.n_inputs == 1:
             clouds = [batch[0]]
         else:
@@ -580,8 +581,11 @@ class PointEncoder(Encoder):
 
         samples = []
 
-        # Important: iterate batch first, then cloud
+        # Process each point cloud independently
+        # Ordering: batch 1 source, batch 1 target,
+        #           batch 2 source, batch 2 target, etc.
         for b in range(B):
+
             for cloud in clouds:
                 sample = {
                     "pos": cloud[0][b] * 10,
@@ -590,27 +594,37 @@ class PointEncoder(Encoder):
                     "category": 0
                 }
 
+                # Apply preprocessing independently
                 sample = self.transform(sample)
 
                 samples.append(sample)
 
-        # Calculate corrected inverse indices BEFORE collation
-        inverse = offset_inverse(samples)
+        # Calculate offsets for inverse indices
+        inverse_list = []
+        offset = 0
 
-        # Collate transformed clouds
+        for sample in samples:
+            inverse_list.append(sample["inverse"] + offset)
+
+            offset += sample["pos"].shape[0]
+
+        inverse = torch.cat(inverse_list, dim=0)
+
+        # Collate transformed point clouds
         transformed_data = collate(samples)
 
-        # Replace the uncorrected inverse indices
+        # Replace inverse with corrected indices
         transformed_data["inverse"] = inverse
 
+        # Run PTv3
         with torch.inference_mode() if self.freeze_grad else nullcontext():
 
             features = self.model(transformed_data)
 
-        # Map features back to original point ordering
+        # Restore original point ordering
         features = features[inverse]
 
-        # Construct batch assignments for the original points
+        # Create batch indices for the original points
         original_batch = torch.repeat_interleave(
             torch.arange(
                 B * self.n_inputs,
@@ -619,11 +633,18 @@ class PointEncoder(Encoder):
             n_points
         )
 
-        # Recover dense point cloud representation
+        # Convert to dense representation
         features, _ = to_dense_batch(
             features,
             original_batch
         )
+
+        # Current ordering:
+        # (batch_1 source, batch_1 target,
+        #  batch_2 source, batch_2 target, ...)
+        #
+        # Reshape and transpose to:
+        # (all source clouds, all target clouds)
 
         features = features.reshape(
             B,
@@ -632,8 +653,11 @@ class PointEncoder(Encoder):
             -1
         )
 
-        if self.n_inputs == 1:
-            features = features[:, 0]
+        features = features.transpose(0, 1).reshape(
+            B * self.n_inputs,
+            n_points,
+            -1
+        )
 
         return features
 

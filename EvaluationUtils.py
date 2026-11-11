@@ -31,6 +31,22 @@ import copy
 
 from torch_geometric.utils import to_dense_batch
 
+def offset_inverse(samples):
+
+    inverse_list = []
+    offset = 0
+
+    for sample in samples:
+
+        inverse = sample["inverse"]
+
+        inverse_list.append(inverse + offset)
+
+        # Number of points in the transformed cloud
+        offset += sample["pos"].shape[0]
+
+    return torch.cat(inverse_list, dim=0)
+
 
 
 class TransformerEncoder(nn.Module):
@@ -531,7 +547,7 @@ class PointEncoder(Encoder):
         data = collate(data)
         return data
 
-    def forward(self, batch, visualise=False):
+    def forward_old(self, batch, visualise=False):
         if self.n_inputs == 1:
             batch = batch[0]
         else:
@@ -551,6 +567,74 @@ class PointEncoder(Encoder):
             #        ["input: color from the scanner", f"PCA of {features.shape[1]:,} features per point"],
             #        point_size=0.4,
             #    )
+        return features
+
+    def forward(self, batch, visualise=False):
+
+        if self.n_inputs == 1:
+            clouds = [batch[0]]
+        else:
+            clouds = list(batch[:self.n_inputs])
+
+        B, n_points, _ = clouds[0][0].shape
+
+        samples = []
+
+        # Important: iterate batch first, then cloud
+        for b in range(B):
+            for cloud in clouds:
+                sample = {
+                    "pos": cloud[0][b] * 10,
+                    "normal": cloud[1][b],
+                    "color": cloud[2][b],
+                    "category": 0
+                }
+
+                sample = self.transform(sample)
+
+                samples.append(sample)
+
+        # Calculate corrected inverse indices BEFORE collation
+        inverse = offset_inverse(samples)
+
+        # Collate transformed clouds
+        transformed_data = collate(samples)
+
+        # Replace the uncorrected inverse indices
+        transformed_data["inverse"] = inverse
+
+        with torch.inference_mode() if self.freeze_grad else nullcontext():
+
+            features = self.model(transformed_data)
+
+        # Map features back to original point ordering
+        features = features[inverse]
+
+        # Construct batch assignments for the original points
+        original_batch = torch.repeat_interleave(
+            torch.arange(
+                B * self.n_inputs,
+                device=features.device
+            ),
+            n_points
+        )
+
+        # Recover dense point cloud representation
+        features, _ = to_dense_batch(
+            features,
+            original_batch
+        )
+
+        features = features.reshape(
+            B,
+            self.n_inputs,
+            n_points,
+            -1
+        )
+
+        if self.n_inputs == 1:
+            features = features[:, 0]
+
         return features
 
     def show_clouds(self, clouds, titles, point_size=5.0, columns=None, height=4.4):

@@ -592,7 +592,7 @@ class PointEncoder(Encoder):
                     "normal": cloud[1][b],
                     "color": cloud[2][b],
                     "category": 0,
-                    #"segment" : torch.ones((*cloud[0][b].shape[:-1],), device=cloud[0][b].device)
+                    "segment" : torch.ones((*cloud[0][b].shape[:-1],), device=cloud[0][b].device)
                 }
 
                 # Apply preprocessing independently

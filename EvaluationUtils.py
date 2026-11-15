@@ -591,7 +591,8 @@ class PointEncoder(Encoder):
                     "pos": cloud[0][b] * 10,
                     "normal": cloud[1][b],
                     "color": cloud[2][b],
-                    "category": 0
+                    "category": 0,
+                    #"segment" : torch.ones((*cloud[0][b].shape[:-1],), device=cloud[0][b].device)
                 }
 
                 # Apply preprocessing independently
@@ -600,29 +601,34 @@ class PointEncoder(Encoder):
                 samples.append(sample)
 
         # Calculate offsets for inverse indices
-        inverse_list = []
-        offset = 0
+        if "inverse" in samples[0]:
+            inverse_list = []
+            offset = 0
 
-        for sample in samples:
-            inverse_list.append(sample["inverse"] + offset)
+            for sample in samples:
+                inverse_list.append(sample["inverse"] + offset)
 
-            offset += sample["pos"].shape[0]
+                offset += sample["pos"].shape[0]
 
-        inverse = torch.cat(inverse_list, dim=0)
+            inverse = torch.cat(inverse_list, dim=0)
 
         # Collate transformed point clouds
         transformed_data = collate(samples)
 
-        # Replace inverse with corrected indices
-        transformed_data["inverse"] = inverse
+        if "inverse" in samples[0]:
+            # Replace inverse with corrected indices
+            transformed_data["inverse"] = inverse
 
         # Run PTv3
         with torch.inference_mode() if self.freeze_grad else nullcontext():
 
             features = self.model(transformed_data)
 
-        # Restore original point ordering
-        features = features[inverse]
+        if "inverse" in samples[0]:
+            # Restore original point ordering
+            features = features[inverse]
+
+
 
         # Create batch indices for the original points
         original_batch = torch.repeat_interleave(

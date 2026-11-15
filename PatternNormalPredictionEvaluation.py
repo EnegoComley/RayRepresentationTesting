@@ -135,7 +135,7 @@ if __name__ == "__main__":
         run_name += "_unfrozen"
 
 
-    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='PatternNormalPredictionEvaluation')
+    wandb_logger = False if args.no_logger else WandbLogger(name=run_name, project='PatternNormalPredictionEvaluationFinal')
     ckpt_dir = f"PatternNormalPredictionEvaluationCheckpoints/{run_name}/"
     test_output_dir = f"PatternNormalPredictionEvaluationResults/{run_name}/"
 

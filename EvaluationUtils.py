@@ -869,4 +869,4 @@ class KPConv(PointEncoder):
 
 
 
-encoders = {"PTV3" : PointTransformerV3, "PTV3NoShift" : PointTransformerV3NoShift, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3RFEncoder" : EM3RFEncoder, "EM3RFPTV3" : EM3RFPTV3, "GridPoints" : GridPoints, "EM3RFVN" : EM3RFVN}
+encoders = {"PTV3" : PointTransformerV3, "PointNet2" : PointNet2, "PointNextxl" : PointNextxl, "Sonata" : Sonata, "KPConv" : KPConv, "RGBAGridEncoder" : RGBAGridEncoder, "PlainRGBAGrid" : PlainRGBAGrid, "EM3RFEncoder" : EM3RFEncoder, "EM3RFPTV3" : EM3RFPTV3, "GridPoints" : GridPoints, "EM3RFVN" : EM3RFVN}

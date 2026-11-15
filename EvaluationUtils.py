@@ -766,7 +766,11 @@ class PointNet2(PointEncoder):
         if self.freeze_grad:
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
-        self.transform = info["transform"]
+        #self.transform = info["transform"]
+        copied_transforms = copy.deepcopy(info["transform"])
+        for x in reversed([1, 4, 5]):
+            copied_transforms.transforms.pop(x)
+        self.transform = copied_transforms
         self.embedding_size = 128
         self.transformed_origin_pos_name = "pos"
 
@@ -799,7 +803,11 @@ class PointNextxl(PointEncoder):
         if self.freeze_grad:
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
-        self.transform = info["transform"]
+        #self.transform = info["transform"]
+        copied_transforms = copy.deepcopy(info["transform"])
+        for x in reversed([1, 5, 6]):
+            copied_transforms.transforms.pop(x)
+        self.transform = copied_transforms
         self.embedding_size = 64
         self.transformed_origin_pos_name = "pos"
 
@@ -832,7 +840,11 @@ class Sonata(PointEncoder):
         if self.freeze_grad:
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
-        self.transform = info["transform"]
+        #self.transform = info["transform"]
+        copied_transforms = copy.deepcopy(info["transform"])
+        copied_transforms.transforms = copied_transforms.transforms[2:]
+        self.transform = copied_transforms
+
         self.embedding_size = 1232
         self.transformed_origin_pos_name = "origin_pos"
 

@@ -682,6 +682,15 @@ class PointEncoder(Encoder):
         low, high = projected.min(0, keepdim=True).values, projected.max(0, keepdim=True).values
         return ((projected - low) / (high - low).clamp_min(1e-6)).clamp(0, 1)
 
+    def remove_bad_transforms(self, transforms):
+        copied_transforms = copy.deepcopy(transforms)
+
+        bad_transforms = ["Shift", "AlignAxis"]
+        for i in reversed(range(len(copied_transforms.transforms))):
+            if copied_transforms.transforms[i].__class__.__name__ in bad_transforms:
+                copied_transforms.transforms.pop(i)
+        return copied_transforms
+
 
 
 class PointTransformerV3(PointEncoder):
@@ -709,9 +718,7 @@ class PointTransformerV3(PointEncoder):
         if self.freeze_grad:
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
-        transforms = copy.deepcopy(info["transform"])
-        transforms.transforms = transforms.transforms[2:]
-        self.transform = transforms
+        self.transform = self.remove_bad_transforms(info["transform"])
 
         self.embedding_size = 64
         self.transformed_origin_pos_name = "origin_pos"
@@ -746,9 +753,7 @@ class PointNet2(PointEncoder):
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
         #self.transform = info["transform"]
-        copied_transforms = copy.deepcopy(info["transform"])
-        for x in reversed([1, 4, 5]):
-            copied_transforms.transforms.pop(x)
+        copied_transforms = self.remove_bad_transforms(info["transform"])
         self.transform = copied_transforms
         self.embedding_size = 128
         self.transformed_origin_pos_name = "pos"
@@ -783,9 +788,7 @@ class PointNextxl(PointEncoder):
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
         #self.transform = info["transform"]
-        copied_transforms = copy.deepcopy(info["transform"])
-        for x in reversed([1, 5, 6]):
-            copied_transforms.transforms.pop(x)
+        copied_transforms = self.remove_bad_transforms(info["transform"])
         self.transform = copied_transforms
         self.embedding_size = 64
         self.transformed_origin_pos_name = "pos"
@@ -820,8 +823,7 @@ class Sonata(PointEncoder):
             self.tp_model = self.tp_model.eval()
         self.model = self.model_func
         #self.transform = info["transform"]
-        copied_transforms = copy.deepcopy(info["transform"])
-        copied_transforms.transforms = copied_transforms.transforms[2:]
+        copied_transforms = self.remove_bad_transforms(info["transform"])
         self.transform = copied_transforms
 
         self.embedding_size = 1232
@@ -856,7 +858,7 @@ class KPConv(PointEncoder):
         )
         self.tp_model = tp_model.eval().to(torch.device("cuda:0"))
         self.model = self.model_func
-        self.transform = info["transform"]
+        self.transform = self.remove_bad_transforms(info["transform"])
         self.embedding_size = 128
         self.transformed_origin_pos_name = "origin_pos"
 
